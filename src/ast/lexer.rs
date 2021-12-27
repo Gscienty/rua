@@ -56,6 +56,10 @@ impl<'src_lf> Lexer<'src_lf> {
         ch.eq(&'\n')
     }
 
+    fn buf_to_string(buf: &Vec<char>) -> String {
+        buf.iter().collect::<String>()
+    }
+
     fn consume(&mut self) {
         if let Some(ch) = self.current_char {
             if Lexer::is_new_line(ch) {
@@ -115,7 +119,7 @@ impl<'src_lf> Lexer<'src_lf> {
         &mut self,
         position: &LexPosition,
         sep: i32,
-        wrap_fn: fn(Vec<char>) -> LexType,
+        wrap_fn: fn(&Vec<char>) -> LexType,
         broken: LexType,
     ) -> Lexeme {
         self.consume();
@@ -126,7 +130,10 @@ impl<'src_lf> Lexer<'src_lf> {
                 if self.skip_long_separator().eq(&sep) {
                     self.consume();
 
-                    return Lexeme::new(LexLocation::new(*position, self.position()), wrap_fn(buf));
+                    return Lexeme::new(
+                        LexLocation::new(*position, self.position()),
+                        wrap_fn(&buf),
+                    );
                 }
             } else {
                 if let Some(ch) = self.current_char {
@@ -168,7 +175,7 @@ impl<'src_lf> Lexer<'src_lf> {
 
         Lexeme::new(
             LexLocation::new(start, self.position()),
-            LexType::QuotedString(buf),
+            LexType::QuotedString(Lexer::buf_to_string(&buf)),
         )
     }
 
@@ -213,7 +220,7 @@ impl<'src_lf> Lexer<'src_lf> {
 
         Lexeme::new(
             LexLocation::new(*position, self.position()),
-            LexType::Number(buf),
+            LexType::Number(Lexer::buf_to_string(&buf)),
         )
     }
 
@@ -227,7 +234,7 @@ impl<'src_lf> Lexer<'src_lf> {
                 return self.read_long_string(
                     &start,
                     sep,
-                    |x: Vec<char>| LexType::Comment(x),
+                    |x: &Vec<char>| LexType::Comment(Lexer::buf_to_string(x)),
                     LexType::BrokenComment,
                 );
             }
@@ -244,7 +251,7 @@ impl<'src_lf> Lexer<'src_lf> {
 
         Lexeme::new(
             LexLocation::new(start, self.position()),
-            LexType::Comment(buf),
+            LexType::Comment(Lexer::buf_to_string(&buf)),
         )
     }
 
@@ -267,7 +274,7 @@ impl<'src_lf> Lexer<'src_lf> {
             break;
         }
 
-        let name = buf.iter().collect::<String>();
+        let name = Lexer::buf_to_string(&buf);
         Lexeme::new(
             LexLocation::new(*position, self.position()),
             match name.as_str() {
@@ -293,7 +300,7 @@ impl<'src_lf> Lexer<'src_lf> {
                 "true" => LexType::True,
                 "until" => LexType::Until,
                 "while" => LexType::While,
-                _ => LexType::Name(buf),
+                _ => LexType::Name(name),
             },
         )
     }
@@ -418,7 +425,7 @@ impl<'src_lf> Lexer<'src_lf> {
                         self.read_long_string(
                             &start,
                             sep,
-                            |x: Vec<char>| LexType::RawString(x),
+                            |x: &Vec<char>| LexType::RawString(Lexer::buf_to_string(x)),
                             LexType::BrokenString,
                         )
                     } else if sep.eq(&-1) {
