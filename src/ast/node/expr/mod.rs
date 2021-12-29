@@ -1,5 +1,6 @@
 mod binary;
 mod call;
+mod error;
 mod function;
 mod if_else;
 mod index_expr;
@@ -11,6 +12,7 @@ mod unary;
 
 pub use binary::*;
 pub use call::ExprCall;
+pub use error::ExprError;
 pub use function::ExprFunction;
 pub use if_else::ExprIfElse;
 pub use index_expr::ExprIndexExpr;

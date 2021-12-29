@@ -4,7 +4,7 @@ pub struct AstName {
 
 impl PartialEq for AstName {
     fn eq(&self, other: &Self) -> bool {
-        self.value.eq(other.value)
+        self.value.eq(&other.value)
     }
 }
 
