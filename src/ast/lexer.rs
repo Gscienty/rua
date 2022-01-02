@@ -14,7 +14,6 @@ pub struct Lexer<'src_lf> {
 
     prev_location: LexLocation,
 
-    skip_comments: bool,
     read_names: bool,
 }
 
@@ -32,13 +31,8 @@ impl<'src_lf> Lexer<'src_lf> {
             line_offset: 0,
             lexeme: Lexeme::new(LexLocation::zero(), LexType::Eof),
             prev_location: LexLocation::zero(),
-            skip_comments: false,
             read_names: true,
         }
-    }
-
-    pub fn set_skip_comments(&mut self, skip: bool) {
-        self.skip_comments = skip;
     }
 
     pub fn set_read_names(&mut self, read: bool) {
@@ -97,18 +91,25 @@ impl<'src_lf> Lexer<'src_lf> {
         }
     }
 
-    fn skip_long_separator(&mut self) -> i32 {
-        self.consume();
-
+    fn skip_long_separator(&mut self, ch: char) -> i32 {
         let mut count = 0;
-        let start = self.current_char;
 
-        while self.current_char.eq(&Some('=')) {
-            self.consume();
-            count += 1;
+        loop {
+            if let Some(ech) = self.current_char {
+                if ech.eq(&'=') {
+                    count += 1;
+                    self.consume();
+
+                    continue;
+                }
+            }
+
+            break;
         }
 
-        if self.current_char.eq(&start) {
+        if self.current_char.eq(&Some(ch)) {
+            self.consume();
+
             count
         } else {
             (-count) - 1
@@ -122,65 +123,84 @@ impl<'src_lf> Lexer<'src_lf> {
         wrap_fn: fn(&Vec<char>) -> LexType,
         broken: LexType,
     ) -> Lexeme {
-        self.consume();
-
         let mut buf: Vec<char> = Vec::new();
-        while self.current_char.is_some() {
-            if self.current_char.eq(&Some(']')) {
-                if self.skip_long_separator().eq(&sep) {
-                    self.consume();
 
-                    return Lexeme::new(
-                        LexLocation::new(*position, self.position()),
-                        wrap_fn(&buf),
-                    );
-                }
-            } else {
-                if let Some(ch) = self.current_char {
+        loop {
+            if let Some(ch) = self.current_char {
+                self.consume();
+
+                if ch.eq(&']') {
+                    if self.skip_long_separator(ch).eq(&sep) {
+                        return Lexeme::new(
+                            LexLocation::new(*position, self.position()),
+                            wrap_fn(&buf),
+                        );
+                    }
+                } else {
                     buf.push(ch);
                 }
-
-                self.consume();
+            } else {
+                return Lexeme::new(LexLocation::new(*position, self.position()), broken);
             }
         }
-
-        Lexeme::new(LexLocation::new(*position, self.position()), broken)
     }
 
-    fn read_quoted_string(&mut self) -> Lexeme {
+    fn read_quoted_string(&mut self, delimiter: char) -> Lexeme {
         let start = self.position();
 
-        let delimiter = self.current_char;
-        self.consume();
-
         let mut buf: Vec<char> = Vec::new();
-        while self.current_char.ne(&delimiter) {
-            match self.current_char {
-                None | Some('\r') | Some('\n') => {
+        loop {
+            if let Some(ch) = self.current_char {
+                self.consume();
+
+                if ch.eq(&delimiter) {
                     return Lexeme::new(
                         LexLocation::new(start, self.position()),
-                        LexType::BrokenString,
+                        LexType::QuotedString(Lexer::buf_to_string(&buf)),
                     );
-                }
-                // TODO \r \n \t etc.
-                _ => {
-                    if let Some(ch) = self.current_char {
-                        buf.push(ch);
+                } else {
+                    match ch {
+                        '\\' => {
+                            if let Some(nch) = self.current_char {
+                                self.consume();
+
+                                match nch {
+                                    '\r' | '\n' => {
+                                        buf.push(nch);
+                                    }
+                                    'r' => buf.push('\n'),
+                                    'n' => buf.push('\n'),
+                                    '\\' => buf.push('\\'),
+                                    _ => {
+                                        return Lexeme::new(
+                                            LexLocation::new(start, self.position()),
+                                            LexType::BrokenString,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        '\r' | '\n' => {
+                            return Lexeme::new(
+                                LexLocation::new(start, self.position()),
+                                LexType::BrokenString,
+                            )
+                        }
+                        _ => buf.push(ch),
                     }
                 }
+            } else {
+                return Lexeme::new(
+                    LexLocation::new(start, self.position()),
+                    LexType::BrokenString,
+                );
             }
-
-            self.consume();
         }
-
-        Lexeme::new(
-            LexLocation::new(start, self.position()),
-            LexType::QuotedString(Lexer::buf_to_string(&buf)),
-        )
     }
 
-    fn read_number(&mut self, position: &LexPosition) -> Lexeme {
+    fn read_number(&mut self, ch: char, position: &LexPosition) -> Lexeme {
         let mut buf: Vec<char> = Vec::new();
+        buf.push(ch);
         loop {
             if let Some(ch) = self.current_char {
                 buf.push(ch);
@@ -228,7 +248,7 @@ impl<'src_lf> Lexer<'src_lf> {
         let start = self.position();
 
         if self.current_char.eq(&Some('[')) {
-            let sep = self.skip_long_separator();
+            let sep = self.skip_long_separator('[');
 
             if sep.ge(&0) {
                 return self.read_long_string(
@@ -240,7 +260,7 @@ impl<'src_lf> Lexer<'src_lf> {
             }
         }
 
-        let buf: Vec<char> = Vec::new();
+        let mut buf: Vec<char> = Vec::new();
         while self.current_char.is_some()
             && self.current_char.ne(&Some('\r'))
             && !Lexer::is_new_line(self.current_char.unwrap())
@@ -255,8 +275,9 @@ impl<'src_lf> Lexer<'src_lf> {
         )
     }
 
-    fn read_name(&mut self, position: &LexPosition) -> Lexeme {
+    fn read_name(&mut self, ch: char, position: &LexPosition) -> Lexeme {
         let mut buf: Vec<char> = Vec::new();
+        buf.push(ch);
         loop {
             if let Some(ch) = self.current_char {
                 buf.push(ch);
@@ -310,6 +331,7 @@ impl<'src_lf> Lexer<'src_lf> {
 
         if let Some(ch) = self.current_char {
             self.consume();
+
             match ch {
                 '-' => match self.current_char {
                     Some('>') => {
@@ -420,7 +442,7 @@ impl<'src_lf> Lexer<'src_lf> {
                     }
                 }
                 '[' => {
-                    let sep = self.skip_long_separator();
+                    let sep = self.skip_long_separator(ch);
                     if sep.ge(&0) {
                         self.read_long_string(
                             &start,
@@ -437,7 +459,7 @@ impl<'src_lf> Lexer<'src_lf> {
                         Lexeme::new(LexLocation::line_offset(start, 1), LexType::BrokenString)
                     }
                 }
-                '\'' | '\"' => self.read_quoted_string(),
+                '\'' | '\"' => self.read_quoted_string(ch),
                 '.' => {
                     if self.current_char.eq(&Some('.')) {
                         self.consume();
@@ -454,9 +476,9 @@ impl<'src_lf> Lexer<'src_lf> {
                             Lexeme::new(LexLocation::line_offset(start, 2), LexType::Dot2)
                         }
                     } else {
-                        if let Some(ch) = self.current_char {
-                            if ch.is_digit(10) {
-                                self.read_number(&start)
+                        if let Some(nch) = self.current_char {
+                            if nch.is_digit(10) {
+                                self.read_number(ch, &start)
                             } else {
                                 Lexeme::new(LexLocation::line_offset(start, 1), LexType::Dot)
                             }
@@ -489,14 +511,10 @@ impl<'src_lf> Lexer<'src_lf> {
                 ',' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::Comma),
                 '#' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::Sharp),
                 _ => {
-                    if let Some(ch) = self.current_char {
-                        if ch.is_digit(10) {
-                            self.read_number(&start)
-                        } else if ch.is_alphabetic() || ch.eq(&'_') {
-                            self.read_number(&start)
-                        } else {
-                            Lexeme::new(LexLocation::line_zero(start), LexType::Eof)
-                        }
+                    if ch.is_digit(10) {
+                        self.read_number(ch, &start)
+                    } else if ch.is_alphabetic() || ch.eq(&'_') {
+                        self.read_name(ch, &start)
                     } else {
                         Lexeme::new(LexLocation::line_zero(start), LexType::Eof)
                     }
@@ -507,7 +525,7 @@ impl<'src_lf> Lexer<'src_lf> {
         }
     }
 
-    fn next(&mut self, skip_comments: bool) -> Lexeme {
+    pub fn next(&mut self, skip_comments: bool) -> Lexeme {
         loop {
             self.skip_space();
             self.prev_location = self.lexeme.get_location();
@@ -520,6 +538,115 @@ impl<'src_lf> Lexer<'src_lf> {
             break;
         }
 
-        self.lexeme
+        self.lexeme.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_single(src: &str, type_: LexType) {
+        let mut lexer = Lexer::new(src);
+        let lexeme = lexer.next(false);
+
+        assert_eq!(lexeme.get_type(), type_);
+    }
+
+    #[test]
+    fn test_lexeme_single() {
+        let assert_list = vec![
+            ("begin", LexType::Begin),
+            ("and", LexType::And),
+            ("break", LexType::Break),
+            ("do", LexType::Do),
+            ("else", LexType::Else),
+            ("elseif", LexType::ElseIf),
+            ("end", LexType::End),
+            ("false", LexType::False),
+            ("for", LexType::For),
+            ("function ", LexType::Function),
+            (" if", LexType::If),
+            ("in", LexType::In),
+            ("local", LexType::Local),
+            ("nil", LexType::Nil),
+            ("not", LexType::Not),
+            ("or", LexType::Or),
+            ("repeat", LexType::Repeat),
+            ("return", LexType::Return),
+            ("then", LexType::Then),
+            ("true", LexType::True),
+            ("until", LexType::Until),
+            ("while", LexType::While),
+            ("_var1", LexType::Name(String::from("_var1"))),
+            (" _var1", LexType::Name(String::from("_var1"))),
+            ("_var1 ", LexType::Name(String::from("_var1"))),
+            ("_var1 _var2", LexType::Name(String::from("_var1"))),
+            ("123", LexType::Number(String::from("123"))),
+            ("123.456", LexType::Number(String::from("123.456"))),
+            (".456", LexType::Number(String::from(".456"))),
+            ("-", LexType::Sub),
+            ("-a", LexType::Sub),
+            ("-1", LexType::Sub),
+            ("->", LexType::SkinnyArrow),
+            ("-=", LexType::SubAssign),
+            (
+                "--comment body",
+                LexType::Comment(String::from("comment body")),
+            ),
+            ("+", LexType::Add),
+            ("+a", LexType::Add),
+            ("+a", LexType::Add),
+            ("+.0", LexType::Add),
+            ("+=", LexType::AddAssign),
+            ("*", LexType::Mul),
+            ("*=", LexType::MulAssign),
+            ("/", LexType::Div),
+            ("/=", LexType::DivAssign),
+            ("%", LexType::Mod),
+            ("%=", LexType::ModAssign),
+            ("^", LexType::Pow),
+            ("^=", LexType::PowAssign),
+            ("=", LexType::Assign),
+            ("==", LexType::Equal),
+            ("<", LexType::Less),
+            ("<=", LexType::LessEqual),
+            (">", LexType::Greater),
+            (">=", LexType::GreaterEqual),
+            ("~", LexType::Not),
+            ("~=", LexType::NotEqual),
+            (":", LexType::Colon),
+            ("::", LexType::DoubleColon),
+            ("[", LexType::LeftSquareBracket),
+            (
+                "[===[hello world]===]",
+                LexType::RawString(String::from("hello world")),
+            ),
+            ("[===[hello world", LexType::BrokenString),
+            ("[===[hello world]====]", LexType::BrokenString),
+            ("'foobar'", LexType::QuotedString(String::from("foobar"))),
+            ("\"foobar\"", LexType::QuotedString(String::from("foobar"))),
+            (
+                "\"foo\\\nbar\"",
+                LexType::QuotedString(String::from("foo\nbar")),
+            ),
+            (".a", LexType::Dot),
+            (".", LexType::Dot),
+            ("..", LexType::Dot2),
+            ("...", LexType::Dot3),
+            ("..=", LexType::ConcatAssign),
+            ("(", LexType::LeftRoundBracket),
+            (")", LexType::RightRoundBracket),
+            ("{", LexType::LeftCurlyBracket),
+            ("}", LexType::RightCurlyBracket),
+            (";", LexType::Semicolon),
+            (",", LexType::Comma),
+            ("#", LexType::Sharp),
+        ];
+
+        for item in assert_list {
+            let (keyword, lex_type) = item;
+            assert_single(keyword, lex_type);
+        }
     }
 }

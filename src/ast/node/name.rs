@@ -1,11 +1,6 @@
+#[derive(Clone, PartialEq)]
 pub struct AstName {
     value: String,
-}
-
-impl PartialEq for AstName {
-    fn eq(&self, other: &Self) -> bool {
-        self.value.eq(&other.value)
-    }
 }
 
 impl AstName {
@@ -40,5 +35,16 @@ impl AstName {
             }
             result
         }
+    }
+
+    pub fn hash(&self) -> u32 {
+        let mut hash_value: u32 = 2166136261;
+
+        for ch in self.value.chars() {
+            hash_value ^= u32::from(ch);
+            hash_value *= 16777619;
+        }
+
+        hash_value
     }
 }

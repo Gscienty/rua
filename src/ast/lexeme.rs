@@ -1,6 +1,6 @@
 use super::{LexLocation, LexType};
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Lexeme {
     lex_type: LexType,
     location: LexLocation,
@@ -16,6 +16,6 @@ impl Lexeme {
     }
 
     pub fn get_type(&self) -> LexType {
-        self.lex_type
+        self.lex_type.clone()
     }
 }
