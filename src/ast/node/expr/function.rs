@@ -1,5 +1,6 @@
-use super::super::{super::LexLocation, AstLocal, AstName, AstTypeList, AstTypePack, StatBlock};
+use super::super::{super::LexLocation, AstLocal, AstName, AstStat, AstTypeList, AstTypePack};
 
+#[derive(Clone)]
 pub struct ExprFunction {
     generics: Vec<AstName>,
     generic_packs: Vec<AstName>,
@@ -10,7 +11,7 @@ pub struct ExprFunction {
     vararg: bool,
     vararg_location: LexLocation,
     vararg_annotation: Box<AstTypePack>,
-    body: Box<StatBlock>,
+    body: Box<AstStat>,
     function_depth: u32,
     debug_name: AstName,
     has_end: bool,

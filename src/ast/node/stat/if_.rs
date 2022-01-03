@@ -1,11 +1,9 @@
-use super::{
-    super::{super::LexLocation, AstExpr, AstStat},
-    StatBlock,
-};
+use super::super::{super::LexLocation, AstExpr, AstStat};
 
+#[derive(Clone)]
 pub struct StatIf {
     condition: Box<AstExpr>,
-    then_body: Box<StatBlock>,
+    then_body: Box<AstStat>,
     else_body: Box<AstStat>,
 
     has_then: bool,

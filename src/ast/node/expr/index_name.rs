@@ -3,6 +3,7 @@ use super::super::{
     AstExpr, AstName,
 };
 
+#[derive(Clone)]
 pub struct ExprIndexName {
     expr: Box<AstExpr>,
     index: AstName,

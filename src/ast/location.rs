@@ -1,4 +1,6 @@
-#[derive(Clone, Copy)]
+use std::fmt::Display;
+
+#[derive(Clone, Copy, PartialEq)]
 pub struct LexPosition {
     line: u32,
     column: u32,
@@ -11,12 +13,6 @@ impl LexPosition {
 
     pub fn zero() -> Self {
         LexPosition::new(0, 0)
-    }
-}
-
-impl PartialEq for LexPosition {
-    fn eq(&self, other: &Self) -> bool {
-        self.line == other.line && self.column == other.column
     }
 }
 
@@ -59,7 +55,13 @@ impl PartialOrd for LexPosition {
     }
 }
 
-#[derive(Clone, Copy)]
+impl Display for LexPosition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(line: {}, column: {})", self.line, self.column)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub struct LexLocation {
     begin: LexPosition,
     end: LexPosition,
@@ -93,10 +95,18 @@ impl LexLocation {
     pub fn contains_closed(&self, position: &LexPosition) -> bool {
         self.begin.le(position) && self.end.ge(position)
     }
+
+    pub fn get_begin(&self) -> LexPosition {
+        self.begin
+    }
+
+    pub fn get_end(&self) -> LexPosition {
+        self.end
+    }
 }
 
-impl PartialEq for LexLocation {
-    fn eq(&self, other: &Self) -> bool {
-        self.begin.eq(&other.begin) && self.end.eq(&other.end)
+impl Display for LexLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(begin: {}, end: {})", self.begin, self.end)
     }
 }

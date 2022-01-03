@@ -1,4 +1,5 @@
 use super::{LexLocation, LexType};
+use std::fmt::Display;
 
 #[derive(Clone)]
 pub struct Lexeme {
@@ -11,11 +12,22 @@ impl Lexeme {
         Lexeme { lex_type, location }
     }
 
-    pub fn get_location(&self) -> LexLocation {
+    pub const fn get_location(&self) -> LexLocation {
         self.location
     }
 
     pub fn get_type(&self) -> LexType {
         self.lex_type.clone()
+    }
+}
+
+impl Display for Lexeme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "<{}, location: {}>",
+            self.lex_type.to_string(),
+            self.location
+        )
     }
 }

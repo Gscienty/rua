@@ -152,3 +152,105 @@ impl LexType {
         70
     }
 }
+
+impl ToString for LexType {
+    fn to_string(&self) -> String {
+        String::from(match self {
+            LexType::Eof => "Eof",
+            LexType::CharEnd => "CharEnd",
+            LexType::Assign => "Assign",
+            LexType::Equal => "Equal",
+            LexType::Less => "Less",
+            LexType::Greater => "Greater",
+            LexType::LessEqual => "LessEqual",
+            LexType::GreaterEqual => "GreaterEqual",
+            LexType::Colon => "Colon",
+            LexType::LeftSquareBracket => "LeftSquareBracket",
+            LexType::RightSquareBracket => "RightSquareBracket",
+            LexType::LeftRoundBracket => "LeftRoundBracket",
+            LexType::RightRoundBracket => "RightSquareBracket",
+            LexType::LeftCurlyBracket => "LeftCurlyBracket",
+            LexType::RightCurlyBracket => "RightCurlyBracket",
+            LexType::Comma => "Comma",
+            LexType::Sharp => "Sharp",
+            LexType::Semicolon => "Semicolon",
+            LexType::NotEqual => "NotEqual",
+            LexType::Dot => "Dot",
+            LexType::Dot2 => "Dot2",
+            LexType::Dot3 => "Dot3",
+            LexType::SkinnyArrow => "SkinnyArrow",
+            LexType::DoubleColon => "DoubleColon",
+            LexType::Add => "Add",
+            LexType::Sub => "Sub",
+            LexType::Mul => "Mul",
+            LexType::Div => "Div",
+            LexType::Mod => "Mod",
+            LexType::Pow => "Pow",
+            LexType::Concat => "Concat",
+            LexType::AddAssign => "AddAssign",
+            LexType::SubAssign => "SubAssign",
+            LexType::MulAssign => "MulAssign",
+            LexType::DivAssign => "DivAssign",
+            LexType::ModAssign => "ModAssign",
+            LexType::PowAssign => "PowAssign",
+            LexType::ConcatAssign => "ConcatAssign",
+            LexType::RawString(val) => {
+                let mut output = String::from("RawString: ");
+                output.push_str(val.as_str());
+
+                return output;
+            }
+            LexType::QuotedString(val) => {
+                let mut output = String::from("QuotedString: ");
+                output.push_str(val.as_str());
+
+                return output;
+            }
+            LexType::Number(val) => {
+                let mut output = String::from("Number: ");
+                output.push_str(val.as_str());
+
+                return output;
+            }
+            LexType::Name(val) => {
+                let mut output = String::from("Name: ");
+                output.push_str(val.as_str());
+
+                return output;
+            }
+            LexType::Comment(val) => {
+                let mut output = String::from("Comment: ");
+                output.push_str(val.as_str());
+
+                return output;
+            }
+            LexType::BlockComment => "BlockComment",
+            LexType::BrokenString => "BrokenString",
+            LexType::BrokenComment => "BrokenComment",
+            LexType::BrokenUnicode => "BrokenUnicode",
+            LexType::Error => "Error",
+            LexType::Begin => "Begin",
+            LexType::And => "And",
+            LexType::Break => "Break",
+            LexType::Do => "Do",
+            LexType::Else => "Else",
+            LexType::ElseIf => "ElseIf",
+            LexType::End => "End",
+            LexType::False => "False",
+            LexType::For => "For",
+            LexType::Function => "Function",
+            LexType::If => "If",
+            LexType::In => "In",
+            LexType::Local => "Local",
+            LexType::Nil => "Nil",
+            LexType::Not => "Not",
+            LexType::Or => "Or",
+            LexType::Repeat => "Repeat",
+            LexType::Return => "Return",
+            LexType::Then => "Then",
+            LexType::True => "True",
+            LexType::Until => "Until",
+            LexType::While => "While",
+        })
+    }
+}

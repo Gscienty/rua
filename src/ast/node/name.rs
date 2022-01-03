@@ -1,13 +1,11 @@
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AstName {
     value: String,
 }
 
 impl AstName {
-    pub fn new(value: &str) -> Self {
-        AstName {
-            value: String::from(value),
-        }
+    pub fn new(value: String) -> Self {
+        AstName { value }
     }
 
     pub fn eq_str(&self, value: &str) -> bool {

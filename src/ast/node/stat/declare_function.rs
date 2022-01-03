@@ -1,5 +1,6 @@
 use super::super::{AstArgumentName, AstName, AstTypeList};
 
+#[derive(Clone)]
 pub struct StatDeclareFunction {
     name: AstName,
     generics: Vec<AstName>,

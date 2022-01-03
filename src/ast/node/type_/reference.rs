@@ -1,5 +1,6 @@
 use super::{super::AstName, AstTypeOrPack};
 
+#[derive(Clone)]
 pub struct TypeReference {
     has_prefix: bool,
     has_parameter_list: bool,

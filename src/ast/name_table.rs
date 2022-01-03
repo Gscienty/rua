@@ -10,7 +10,7 @@ pub struct NameTableEntry {
 impl NameTableEntry {
     pub fn new(name: &str, type_: LexType) -> Self {
         NameTableEntry {
-            value: AstName::new(name),
+            value: AstName::new(String::from(name)),
             type_,
         }
     }
@@ -33,6 +33,12 @@ pub struct NameTable {
 }
 
 impl NameTable {
+    pub fn new() -> Self {
+        NameTable {
+            data: HashMap::new(),
+        }
+    }
+
     pub fn add(&mut self, name: &str, type_: LexType) -> AstName {
         let entry = &NameTableEntry::new(name, type_);
         self.data.insert(entry.get_hash(), entry.clone());
@@ -59,7 +65,7 @@ impl NameTable {
         if let Some(existed_entry) = self.data.get(&entry.get_hash()) {
             (existed_entry.get_name(), existed_entry.get_type())
         } else {
-            (AstName::new(""), LexType::Name(String::new()))
+            (AstName::new(String::new()), LexType::Name(String::new()))
         }
     }
 }

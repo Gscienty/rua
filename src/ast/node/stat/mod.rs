@@ -1,8 +1,5 @@
 mod assign;
-mod block;
-mod break_;
 mod compound_assign;
-mod continue_;
 mod declare_class;
 mod declare_function;
 mod declare_global;
@@ -20,10 +17,7 @@ mod type_alias;
 mod while_;
 
 pub use assign::StatAssign;
-pub use block::StatBlock;
-pub use break_::StatBreak;
 pub use compound_assign::StatCompoundAssign;
-pub use continue_::StatContinue;
 pub use declare_class::{DeclaredClassProp, StatDeclareClass};
 pub use declare_function::StatDeclareFunction;
 pub use declare_global::StatDeclareGlobal;

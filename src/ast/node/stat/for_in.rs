@@ -1,12 +1,10 @@
-use super::{
-    super::{super::LexLocation, AstExpr, AstLocal},
-    StatBlock,
-};
+use super::super::{super::LexLocation, AstExpr, AstLocal, AstStat};
 
+#[derive(Clone)]
 pub struct StatForIn {
     vars: Vec<Box<AstLocal>>,
     values: Vec<Box<AstExpr>>,
-    body: Box<StatBlock>,
+    body: Box<AstStat>,
 
     has_in: bool,
     in_location: LexLocation,

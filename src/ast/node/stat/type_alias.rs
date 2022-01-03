@@ -1,5 +1,6 @@
 use super::super::{AstName, AstType};
 
+#[derive(Clone)]
 pub struct StatTypeAlias {
     name: AstName,
     generics: Vec<AstName>,

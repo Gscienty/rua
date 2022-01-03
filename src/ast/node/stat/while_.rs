@@ -1,11 +1,9 @@
-use super::{
-    super::{super::LexLocation, AstExpr, AstStat},
-    StatBlock,
-};
+use super::super::{super::LexLocation, AstExpr, AstStat};
 
+#[derive(Clone)]
 pub struct StatWhile {
     condition: Box<AstExpr>,
-    body: Box<StatBlock>,
+    body: Box<AstStat>,
 
     has_do: bool,
     do_location: LexLocation,

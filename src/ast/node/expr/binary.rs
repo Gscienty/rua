@@ -1,5 +1,6 @@
 use super::super::AstExpr;
 
+#[derive(Clone)]
 pub enum BinaryOperator {
     Add,
     Sub,
@@ -18,6 +19,7 @@ pub enum BinaryOperator {
     Or,
 }
 
+#[derive(Clone)]
 pub struct ExprBinary {
     operator: BinaryOperator,
     left: Box<AstExpr>,

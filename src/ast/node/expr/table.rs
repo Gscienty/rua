@@ -1,11 +1,13 @@
 use super::super::AstExpr;
 
+#[derive(Clone)]
 pub enum TableKind {
     List,
     Record,
     General,
 }
 
+#[derive(Clone)]
 pub struct TableItem {
     kind: TableKind,
 
@@ -13,6 +15,8 @@ pub struct TableItem {
     value: Box<AstExpr>,
 }
 
-pub struct ExprTable {
-    items: Vec<TableItem>,
+impl TableItem {
+    pub fn new(kind: TableKind, key: Box<AstExpr>, value: Box<AstExpr>) -> Self {
+        TableItem { kind, key, value }
+    }
 }

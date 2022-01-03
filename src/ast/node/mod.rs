@@ -3,20 +3,19 @@ mod expr;
 mod local;
 mod name;
 mod stat;
-mod state;
 mod type_;
-mod type_pack;
 
 pub use argument_name::AstArgumentName;
 pub use expr::*;
 pub use local::AstLocal;
 pub use name::AstName;
 pub use stat::*;
-pub use state::AstNodeState;
 pub use type_::*;
-pub use type_pack::*;
 
+#[derive(Clone)]
 pub enum AstNodePayload {
+    None,
+
     ExprGroup(Box<AstExpr>),
     ExprConstantNil,
     ExprConstantBool(bool),
@@ -31,13 +30,13 @@ pub enum AstNodePayload {
     ExprBinary(Box<ExprBinary>),
     ExprFunction(Box<ExprFunction>),
     ExprIfElse(Box<ExprIfElse>),
-    ExprTable(Box<ExprTable>),
+    ExprTable(Vec<TableItem>),
     ExprTypeAssertion(Box<ExprTypeAssertion>),
     ExprUnary(Box<ExprUnary>),
     ExprError(Box<ExprError>),
 
     StatAssign(Box<StatAssign>),
-    StatBlock(Box<StatBlock>),
+    StatBlock(Vec<Box<AstStat>>),
     StatCompoundAssign(Box<StatCompoundAssign>),
     StatDeclareClass(Box<StatDeclareClass>),
     StatDeclareFunction(Box<StatFunction>),
@@ -47,8 +46,8 @@ pub enum AstNodePayload {
     StatFunction(Box<StatFunction>),
     StatLocal(Box<StatLocal>),
     StatLocalFunction(Box<StatLocalFunction>),
-    StatBreak(Box<StatBreak>),
-    StatContinue(Box<StatContinue>),
+    StatBreak,
+    StatContinue,
     StatFor(Box<StatFor>),
     StatIf(Box<StatIf>),
     StatRepeat(Box<StatRepeat>),
@@ -61,20 +60,54 @@ pub enum AstNodePayload {
     TypeFunction(Box<TypeFunction>),
     TypeIntersection(Box<TypeIntersection>),
     TypeReference(Box<TypeReference>),
-    TypeSingletonBool(Box<TypeSingletonBool>),
-    TypeSingletonString(Box<TypeSingletonString>),
+    TypeSingletonBool(bool),
+    TypeSingletonString(String),
     TypeTable(Box<TypeTable>),
-    TypeTypeof(Box<TypeTypeof>),
-    TypeUnion(Box<TypeUnion>),
+    TypeTypeof(Box<AstExpr>),
+    TypeUnion(Vec<Box<AstType>>),
 
-    TypePackExplicit(Box<TypePackExplicit>),
-    TypePackGeneric(Box<TypePackGeneric>),
-    TypePackVariadic(Box<TypePackVariadic>),
+    TypePackExplicit(Box<AstTypeList>),
+    TypePackGeneric(AstName),
+    TypePackVariadic(Box<AstType>),
 }
 
+use super::LexLocation;
+
+#[derive(Clone)]
+pub struct AstNodeState {
+    class_index: i32,
+    location: LexLocation,
+}
+
+impl AstNodeState {
+    pub fn new(class_index: i32, location: LexLocation) -> Self {
+        AstNodeState {
+            class_index,
+            location,
+        }
+    }
+
+    pub fn get_location(&self) -> LexLocation {
+        self.location
+    }
+}
+
+#[derive(Clone)]
 pub struct AstNode {
     state: AstNodeState,
     payload: AstNodePayload,
+
+    has_semicolon: bool,
+}
+
+impl AstNode {
+    pub fn get_payload(&self) -> AstNodePayload {
+        self.payload.clone()
+    }
+
+    pub fn get_location(&self) -> LexLocation {
+        self.state.get_location()
+    }
 }
 
 pub type AstExpr = AstNode;
@@ -82,6 +115,30 @@ pub type AstType = AstNode;
 pub type AstTypePack = AstNode;
 pub type AstStat = AstNode;
 
+impl AstNode {
+    pub fn new_nil() -> Box<Self> {
+        Box::new(AstNode {
+            state: AstNodeState::new(0, LexLocation::zero()),
+            payload: AstNodePayload::None,
+            has_semicolon: false,
+        })
+    }
+    pub fn new(location: LexLocation, payload: AstNodePayload) -> Box<Self> {
+        Box::new(AstNode {
+            state: AstNodeState::new(0, location),
+            payload,
+            has_semicolon: false,
+        })
+    }
+}
+
+impl AstStat {
+    pub fn set_has_semicolon(&mut self, has_semicolon: bool) {
+        self.has_semicolon = has_semicolon;
+    }
+}
+
+#[derive(Clone)]
 pub struct AstTypeList {
     types: Vec<AstType>,
     tail_type: AstTypePack,
@@ -124,8 +181,8 @@ impl AstNodePayload {
             | &Self::StatFunction(_)
             | &Self::StatLocal(_)
             | &Self::StatLocalFunction(_)
-            | &Self::StatBreak(_)
-            | &Self::StatContinue(_)
+            | &Self::StatBreak
+            | &Self::StatContinue
             | &Self::StatFor(_)
             | &Self::StatIf(_)
             | &Self::StatRepeat(_)

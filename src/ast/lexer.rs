@@ -2,7 +2,6 @@ use super::{LexLocation, LexPosition, LexType, Lexeme};
 use std::str::Chars;
 
 pub struct Lexer<'src_lf> {
-    src: &'src_lf str,
     src_p: Chars<'src_lf>,
     current_char: Option<char>,
 
@@ -13,8 +12,6 @@ pub struct Lexer<'src_lf> {
     lexeme: Lexeme,
 
     prev_location: LexLocation,
-
-    read_names: bool,
 }
 
 impl<'src_lf> Lexer<'src_lf> {
@@ -23,7 +20,6 @@ impl<'src_lf> Lexer<'src_lf> {
         let current_char = chars.next();
 
         Lexer {
-            src,
             src_p: chars,
             current_char,
             offset: 0,
@@ -31,12 +27,7 @@ impl<'src_lf> Lexer<'src_lf> {
             line_offset: 0,
             lexeme: Lexeme::new(LexLocation::zero(), LexType::Eof),
             prev_location: LexLocation::zero(),
-            read_names: true,
         }
-    }
-
-    pub fn set_read_names(&mut self, read: bool) {
-        self.read_names = read;
     }
 
     fn is_space(ch: char) -> bool {
@@ -170,6 +161,7 @@ impl<'src_lf> Lexer<'src_lf> {
                                     }
                                     'r' => buf.push('\n'),
                                     'n' => buf.push('\n'),
+                                    't' => buf.push('\t'),
                                     '\\' => buf.push('\\'),
                                     _ => {
                                         return Lexeme::new(
@@ -540,6 +532,26 @@ impl<'src_lf> Lexer<'src_lf> {
 
         self.lexeme.clone()
     }
+
+    pub fn get_prev_location(&self) -> LexLocation {
+        self.prev_location
+    }
+
+    pub fn get_current(&self) -> Lexeme {
+        self.lexeme.clone()
+    }
+
+    pub const fn get_current_ref(&self) -> &Lexeme {
+        &self.lexeme
+    }
+
+    pub const fn get_current_location(&self) -> LexLocation {
+        self.get_current_ref().get_location()
+    }
+
+    pub fn get_current_type(&self) -> LexType {
+        self.get_current_ref().get_type()
+    }
 }
 
 #[cfg(test)]
@@ -648,5 +660,50 @@ mod tests {
             let (keyword, lex_type) = item;
             assert_single(keyword, lex_type);
         }
+    }
+
+    #[test]
+    fn test_sample_program() {
+        let src = "
+        function hello_world(statement)
+            print(statement)
+        end
+
+        -- print \"foo bar\"
+        hello_world('foo bar')
+
+        ";
+        let expect_vec = vec![
+            LexType::Function,
+            LexType::Name(String::from("hello_world")),
+            LexType::LeftRoundBracket,
+            LexType::Name(String::from("statement")),
+            LexType::RightRoundBracket,
+            LexType::Name(String::from("print")),
+            LexType::LeftRoundBracket,
+            LexType::Name(String::from("statement")),
+            LexType::RightRoundBracket,
+            LexType::End,
+            LexType::Comment(String::from(" print \"foo bar\"")),
+            LexType::Name(String::from("hello_world")),
+            LexType::LeftRoundBracket,
+            LexType::QuotedString(String::from("foo bar")),
+            LexType::RightRoundBracket,
+        ];
+
+        let mut lexer = Lexer::new(src);
+
+        let mut actual_vec: Vec<LexType> = Vec::new();
+        loop {
+            let lexeme = lexer.next(false);
+
+            if lexeme.get_type().eq(&LexType::Eof) {
+                break;
+            } else {
+                actual_vec.push(lexeme.get_type());
+            }
+        }
+
+        assert_eq!(expect_vec, actual_vec);
     }
 }

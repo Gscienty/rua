@@ -1,5 +1,6 @@
 use super::super::{AstArgumentName, AstName, AstTypeList};
 
+#[derive(Clone)]
 pub struct TypeFunction {
     generics: Vec<AstName>,
     generic_packs: Vec<AstName>,

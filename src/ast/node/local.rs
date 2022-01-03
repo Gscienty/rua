@@ -1,5 +1,6 @@
 use super::{super::LexLocation, AstName, AstNode};
 
+#[derive(Clone)]
 pub struct AstLocal {
     name: AstName,
     location: LexLocation,
@@ -27,5 +28,13 @@ impl AstLocal {
             loop_depth,
             annotation,
         }
+    }
+
+    pub fn get_name(&self) -> AstName {
+        self.name.clone()
+    }
+
+    pub fn get_shadow(&self) -> Box<AstLocal> {
+        self.shadow.clone()
     }
 }
