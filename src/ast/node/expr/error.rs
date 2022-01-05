@@ -1,4 +1,4 @@
-use super::super::{AstExpr, AstNodePayload};
+use super::super::{AstExpr, AstNodePayload, LexLocation};
 
 #[derive(Clone)]
 pub struct ExprError {
@@ -7,10 +7,17 @@ pub struct ExprError {
 }
 
 impl ExprError {
-    pub fn new(expressions: Vec<Box<AstExpr>>, message_index: usize) -> AstNodePayload {
-        AstNodePayload::ExprError(Box::new(ExprError {
-            expressions,
-            message_index,
-        }))
+    pub fn new(
+        location: LexLocation,
+        expressions: Vec<Box<AstExpr>>,
+        message_index: usize,
+    ) -> Box<AstExpr> {
+        AstExpr::new(
+            location,
+            AstNodePayload::ExprError(Box::new(ExprError {
+                expressions,
+                message_index,
+            })),
+        )
     }
 }

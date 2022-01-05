@@ -1,4 +1,4 @@
-use super::super::{AstExpr, AstNodePayload};
+use super::super::{AstExpr, AstNodePayload, LexLocation};
 
 #[derive(Clone)]
 pub enum UnaryOperator {
@@ -14,7 +14,10 @@ pub struct ExprUnary {
 }
 
 impl ExprUnary {
-    pub fn new(operator: UnaryOperator, expr: Box<AstExpr>) -> AstNodePayload {
-        AstNodePayload::ExprUnary(Box::new(ExprUnary { operator, expr }))
+    pub fn new(location: LexLocation, operator: UnaryOperator, expr: Box<AstExpr>) -> Box<AstExpr> {
+        AstExpr::new(
+            location,
+            AstNodePayload::ExprUnary(Box::new(ExprUnary { operator, expr })),
+        )
     }
 }

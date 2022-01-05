@@ -11,7 +11,7 @@ pub struct Lexer<'src_lf> {
 
     lexeme: Lexeme,
 
-    prev_location: LexLocation,
+    previous_location: LexLocation,
 }
 
 impl<'src_lf> Lexer<'src_lf> {
@@ -26,7 +26,7 @@ impl<'src_lf> Lexer<'src_lf> {
             line: 0,
             line_offset: 0,
             lexeme: Lexeme::new(LexLocation::zero(), LexType::Eof),
-            prev_location: LexLocation::zero(),
+            previous_location: LexLocation::zero(),
         }
     }
 
@@ -520,7 +520,7 @@ impl<'src_lf> Lexer<'src_lf> {
     pub fn next(&mut self, skip_comments: bool) -> Lexeme {
         loop {
             self.skip_space();
-            self.prev_location = self.lexeme.get_location();
+            self.previous_location = self.lexeme.get_location();
 
             self.lexeme = self.read_next();
 
@@ -533,8 +533,8 @@ impl<'src_lf> Lexer<'src_lf> {
         self.lexeme.clone()
     }
 
-    pub fn get_prev_location(&self) -> LexLocation {
-        self.prev_location
+    pub fn get_previous_location(&self) -> LexLocation {
+        self.previous_location
     }
 
     pub fn get_current(&self) -> Lexeme {
