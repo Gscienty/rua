@@ -282,6 +282,120 @@ impl<'src_lf> Parser<'src_lf> {
             Err(self.report_expr_error("expression"))
         }
     }
+
+    fn parse_name(&mut self, error_msg: &str) -> Result<(AstName, LexLocation), Box<AstExpr>> {
+        if let LexType::Name(value) = self.get_lexeme() {
+            self.next_lexeme();
+
+            Ok((AstName::new(value), self.get_location()))
+        } else {
+            Err(self.report_expr_error(error_msg))
+        }
+    }
+
+    fn parse_expr_list(&mut self, mut result: &Vec<Box<AstExpr>>) {
+        result.push(self.parse_expr(0));
+
+        while self.get_lexeme() == LexType::Comma {
+            self.next_lexeme();
+
+            result.push(self.parse_expr(0));
+        }
+    }
+
+    fn parse_function_args(
+        &mut self,
+        func_expr: Box<AstExpr>,
+        is_self: bool,
+        self_location: LexLocation,
+    ) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        match self.get_lexeme() {
+            LexType::LeftRoundBracket => {
+                let arg_begin = self.get_location().get_begin();
+                self.next_lexeme();
+
+                let mut args: Vec<Box<AstExpr>> = Vec::new();
+                if self.get_lexeme() != LexType::RightRoundBracket {
+                    self.parse_expr_list(&args);
+                }
+
+                if self.get_lexeme() == LexType::RightRoundBracket {
+                    let end = self.get_location().get_end();
+                    self.next_lexeme();
+
+                    Ok(ExprCall::new(
+                        LexLocation::new(func_expr.get_location().get_begin(), end),
+                        func_expr,
+                        args,
+                        is_self,
+                        LexLocation::new(arg_begin, end),
+                    ))
+                } else {
+                    Err(self.report_expr_error("unexpected ')'"))
+                }
+            }
+            LexType::LeftSquareBracket => {}
+            LexType::RawString(_) | LexType::QuotedString(_) => {}
+            _ => {}
+        }
+    }
+
+    fn parse_primary_expr(&mut self, as_statement: bool) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let begin = self.get_location().get_begin();
+        let mut expr = self.parse_prefix_expr()?;
+
+        loop {
+            match self.get_lexeme() {
+                LexType::Dot => {
+                    let operator_position = self.get_location().get_begin();
+                    self.next_lexeme();
+
+                    let (index_name, index_location) = self.parse_name("")?;
+                    expr = ExprIndexName::new(
+                        LexLocation::new(begin, index_location.get_end()),
+                        expr,
+                        index_name,
+                        index_location,
+                        operator_position,
+                        '.',
+                    );
+                }
+                LexType::LeftSquareBracket => {
+                    self.next_lexeme();
+
+                    let index = self.parse_expr(0);
+                    let end = self.get_location().get_end();
+
+                    if LexType::RightSquareBracket == self.get_lexeme() {
+                        self.next_lexeme();
+                    } else {
+                        return Err(self.report_expr_error("unexpected ']'"));
+                    }
+
+                    expr = ExprIndexExpr::new(LexLocation::new(begin, end), expr, index)
+                }
+                LexType::Colon => {
+                    let operator_position = self.get_location().get_begin();
+                    self.next_lexeme();
+
+                    let (index_name, index_location) = self.parse_name("method name")?;
+                    expr = ExprIndexName::new(
+                        LexLocation::new(begin, index_location.get_end()),
+                        expr,
+                        index_name,
+                        index_location,
+                        operator_position,
+                        ':',
+                    );
+                }
+                LexType::LeftRoundBracket => {}
+                LexType::LeftCurlyBracket | LexType::RawString(_) | LexType::QuotedString(_) => {}
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
 }
 
 #[cfg(test)]
