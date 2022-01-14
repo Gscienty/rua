@@ -10,6 +10,7 @@ pub struct Lexer<'src_lf> {
     line_offset: u32,
 
     lexeme: Lexeme,
+    next_lexeme: Lexeme,
 
     previous_location: LexLocation,
 }
@@ -19,15 +20,19 @@ impl<'src_lf> Lexer<'src_lf> {
         let mut chars = src.chars();
         let current_char = chars.next();
 
-        Lexer {
+        let mut result = Lexer {
             src_p: chars,
             current_char,
             offset: 0,
             line: 0,
             line_offset: 0,
             lexeme: Lexeme::new(LexLocation::zero(), LexType::Eof),
+            next_lexeme: Lexeme::new(LexLocation::zero(), LexType::Eof),
             previous_location: LexLocation::zero(),
-        }
+        };
+        result.next(true);
+
+        result
     }
 
     fn is_space(ch: char) -> bool {
@@ -502,6 +507,9 @@ impl<'src_lf> Lexer<'src_lf> {
                 ';' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::Semicolon),
                 ',' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::Comma),
                 '#' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::Sharp),
+                '|' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::SingletonOr),
+                '&' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::SingletonAnd),
+                '?' => Lexeme::new(LexLocation::line_offset(start, 1), LexType::QuestionMark),
                 _ => {
                     if ch.is_digit(10) {
                         self.read_number(ch, &start)
@@ -522,7 +530,8 @@ impl<'src_lf> Lexer<'src_lf> {
             self.skip_space();
             self.previous_location = self.lexeme.get_location();
 
-            self.lexeme = self.read_next();
+            self.lexeme = self.next_lexeme.clone();
+            self.next_lexeme = self.read_next();
 
             if skip_comments && Lexer::is_comment(&self.lexeme) {
                 continue;
@@ -535,6 +544,10 @@ impl<'src_lf> Lexer<'src_lf> {
 
     pub fn get_previous_location(&self) -> LexLocation {
         self.previous_location
+    }
+
+    pub fn get_ahead(&self) -> Lexeme {
+        self.next_lexeme.clone()
     }
 
     pub fn get_current(&self) -> Lexeme {

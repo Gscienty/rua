@@ -15,25 +15,23 @@ impl ParseError {
     }
 }
 
-pub struct ParserOptions {
-    allow_type_annotations: bool,
-    support_continue_statement: bool,
-    allow_declaration_syntax: bool,
-    capture_comments: bool,
-}
-
+use std::collections::HashMap;
 pub struct Parser<'src_lf> {
     lexer: Lexer<'src_lf>,
-
+    local_map: HashMap<AstName, AstLocal>,
+    local_stack: Vec<&'src_lf AstLocal>,
     error_msgs: Vec<String>,
+    function_stack: Vec<(bool, u32)>,
 }
 
 impl<'src_lf> Parser<'src_lf> {
     pub fn new(src: &'src_lf str) -> Self {
         let mut result = Parser {
             lexer: Lexer::new(src),
-
+            local_map: HashMap::new(),
+            local_stack: Vec::new(),
             error_msgs: Vec::new(),
+            function_stack: Vec::new(),
         };
         result.next_lexeme();
 
@@ -50,6 +48,10 @@ impl<'src_lf> Parser<'src_lf> {
         self.lexer.get_current_type()
     }
 
+    fn get_ahead_lexeme(&self) -> LexType {
+        self.lexer.get_ahead().get_type()
+    }
+
     fn get_location(&self) -> LexLocation {
         self.lexer.get_current_location()
     }
@@ -62,35 +64,46 @@ impl<'src_lf> Parser<'src_lf> {
         self.lexer.next(true);
     }
 
-    fn expr_string(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+    fn parse_string_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
         match self.get_lexeme() {
-            LexType::RawString(value) => Ok(new_constant_string(self.get_location(), value)),
-            LexType::QuotedString(value) => Ok(new_constant_string(self.get_location(), value)),
+            LexType::RawString(value) => {
+                self.next_lexeme();
+                Ok(new_constant_string(self.get_location(), value))
+            }
+            LexType::QuotedString(value) => {
+                self.next_lexeme();
+                Ok(new_constant_string(self.get_location(), value))
+            }
             _ => Err(self.report_expr_error("String literal contains malformed escape sequence")),
         }
     }
 
-    fn expr_name(&mut self, error_msg: &str) -> Result<(AstName, LexLocation), Box<AstExpr>> {
-        if let LexType::Name(name) = self.get_lexeme() {
-            Ok((AstName::new(name), self.get_location()))
-        } else {
-            Err(self.report_expr_error(error_msg))
-        }
-    }
+    fn parse_nil_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let location = self.get_location();
 
-    fn expr_nil(&mut self, error_msg: &str) -> Result<Box<AstExpr>, Box<AstExpr>> {
         if self.get_lexeme().eq(&LexType::Nil) {
-            Ok(new_constant_nil(self.get_location()))
+            self.next_lexeme();
+
+            Ok(new_constant_nil(location))
         } else {
-            Err(self.report_expr_error(error_msg))
+            Err(self.report_expr_error("unexpected nil"))
         }
     }
 
-    fn expr_bool(&mut self, error_msg: &str) -> Result<Box<AstExpr>, Box<AstExpr>> {
+    fn parse_bool_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let location = self.get_location();
+
         match self.get_lexeme() {
-            LexType::True => Ok(new_constant_bool(self.get_location(), true)),
-            LexType::False => Ok(new_constant_bool(self.get_location(), false)),
-            _ => Err(self.report_expr_error(error_msg)),
+            LexType::True => {
+                self.next_lexeme();
+
+                Ok(new_constant_bool(location, true))
+            }
+            LexType::False => {
+                self.next_lexeme();
+                Ok(new_constant_bool(location, false))
+            }
+            _ => Err(self.report_expr_error("unexpected bool")),
         }
     }
 
@@ -122,8 +135,11 @@ impl<'src_lf> Parser<'src_lf> {
         Ok(value as f64)
     }
 
-    fn expr_number(&mut self, error_msg: &str) -> Result<Box<AstExpr>, Box<AstExpr>> {
+    fn parse_number_expr(&mut self, error_msg: &str) -> Result<Box<AstExpr>, Box<AstExpr>> {
         if let LexType::Number(value) = self.get_lexeme() {
+            let location = self.get_location();
+            self.next_lexeme();
+
             let clear_value = value.replace("_", "");
 
             let dec_fn = || {
@@ -136,7 +152,7 @@ impl<'src_lf> Parser<'src_lf> {
 
             let mut clear_value_chars = clear_value.chars();
             Ok(new_constant_number(
-                self.get_location(),
+                location,
                 if clear_value_chars.next().eq(&Some('0')) {
                     match clear_value_chars.next() {
                         Some('b') | Some('B') => {
@@ -204,197 +220,249 @@ impl<'src_lf> Parser<'src_lf> {
         })
     }
 
-    const BINARY_OPERATOR_PRIORITY: [(usize, usize); 15] = [
-        // `+' `-' `*' `/' `%'
-        (6, 6),
-        (6, 6),
-        (7, 7),
-        (7, 7),
-        (7, 7),
-        // power and concat (right associative)
-        (10, 9),
-        (5, 4),
-        // equality and inequality
-        (3, 3),
-        (3, 3),
-        // order
-        (3, 3),
-        (3, 3),
-        (3, 3),
-        (3, 3),
-        // logical (and/or)'`'`'`'`'`
-        (2, 2),
-        (1, 1),
-    ];
-
-    const UNARY_OPERATOR_PRIORITY: usize = 8;
-
-    fn parse_expr(&mut self, limit: usize) -> Box<AstExpr> {
-        let begin = self.get_location().get_begin();
-        let mut expr: Box<AstExpr> = AstExpr::new_nil();
-
-        if let Ok(unary_operator) = Parser::parse_unary_operator(self.get_lexeme()) {
+    fn parse_name(&mut self) -> Result<(AstName, LexLocation), Box<AstExpr>> {
+        if let LexType::Name(value) = self.get_lexeme() {
+            let location = self.get_location();
             self.next_lexeme();
 
-            let sub_expr = self.parse_expr(Parser::UNARY_OPERATOR_PRIORITY);
-
-            expr = ExprUnary::new(
-                LexLocation::new(begin, sub_expr.get_location().get_end()),
-                unary_operator,
-                sub_expr,
-            );
+            Ok((AstName::new(value), location))
         } else {
+            Err(self.report_expr_error("unexpected name"))
         }
-
-        expr
     }
 
-    fn parse_simple_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        // TODO
-        match self.get_lexeme() {
-            LexType::Nil => self.expr_nil("nil"),
-            LexType::True | LexType::False => self.expr_bool("bool"),
-            LexType::Number(_) => self.expr_number("number"),
-            LexType::RawString(_) | LexType::QuotedString(_) => self.expr_string(),
-            LexType::BrokenString => self.expr_string(),
-            _ => Err(self.report_expr_error("unexpected lexeme type")),
-        }
+    fn parse_name_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let (name, location) = self.parse_name()?;
+
+        Ok(if let Some(local) = self.local_map.get(&name) {
+            ExprLocal::new(
+                location,
+                local.clone(),
+                local.get_function_depth() != self.function_stack.len() - 1,
+            )
+        } else {
+            new_expr_global(location, name)
+        })
     }
 
     fn parse_prefix_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
         if self.get_lexeme() == LexType::LeftRoundBracket {
-            let begin = self.get_location().get_begin();
-
+            let start = self.get_location();
             self.next_lexeme();
-            let expr = self.parse_expr(0);
+            let expr = self.parse_expr()?;
+            let end = self.get_location();
 
-            if self.get_lexeme() == LexType::RightRoundBracket {
+            if self.get_lexeme() != LexType::RightRoundBracket {
+                Err(self.report_expr_error("unexpected right round bracket"))
+            } else {
                 self.next_lexeme();
 
                 Ok(new_expr_group(
-                    LexLocation::new(begin, self.get_location().get_end()),
+                    LexLocation::new(start.get_begin(), end.get_end()),
                     expr,
                 ))
-            } else {
-                Err(self.report_expr_error("unexpected ')'"))
             }
         } else {
-            Err(self.report_expr_error("expression"))
+            self.parse_name_expr()
         }
     }
 
-    fn parse_name(&mut self, error_msg: &str) -> Result<(AstName, LexLocation), Box<AstExpr>> {
-        if let LexType::Name(value) = self.get_lexeme() {
-            self.next_lexeme();
-
-            Ok((AstName::new(value), self.get_location()))
-        } else {
-            Err(self.report_expr_error(error_msg))
-        }
+    fn parse_table_constructor(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        // TODO
     }
 
-    fn parse_expr_list(&mut self, mut result: &Vec<Box<AstExpr>>) {
-        result.push(self.parse_expr(0));
+    fn parse_expr_list(&mut self, args: &mut Vec<Box<AstExpr>>) -> Result<(), Box<AstExpr>> {
+        args.push(self.parse_expr()?);
 
         while self.get_lexeme() == LexType::Comma {
             self.next_lexeme();
-
-            result.push(self.parse_expr(0));
+            args.push(self.parse_expr()?);
         }
+
+        Ok(())
     }
 
-    fn parse_function_args(
+    fn parse_function_args_expr(
         &mut self,
-        func_expr: Box<AstExpr>,
-        is_self: bool,
+        func: Box<AstExpr>,
+        has_self: bool,
         self_location: LexLocation,
     ) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        match self.get_lexeme() {
+        Ok(match self.get_lexeme() {
+            // <func>(<arg>[,<arg>])
             LexType::LeftRoundBracket => {
-                let arg_begin = self.get_location().get_begin();
+                let arg_start = self.get_location().get_end();
                 self.next_lexeme();
 
                 let mut args: Vec<Box<AstExpr>> = Vec::new();
                 if self.get_lexeme() != LexType::RightRoundBracket {
-                    self.parse_expr_list(&args);
+                    self.parse_expr_list(&mut args)?;
                 }
+                let end = self.get_location();
+                let arg_end = end.get_end();
+                self.next_lexeme();
 
-                if self.get_lexeme() == LexType::RightRoundBracket {
-                    let end = self.get_location().get_end();
-                    self.next_lexeme();
-
-                    Ok(ExprCall::new(
-                        LexLocation::new(func_expr.get_location().get_begin(), end),
-                        func_expr,
-                        args,
-                        is_self,
-                        LexLocation::new(arg_begin, end),
-                    ))
-                } else {
-                    Err(self.report_expr_error("unexpected ')'"))
-                }
+                ExprCall::new(
+                    LexLocation::new(func.get_location().get_begin(), end.get_end()),
+                    func,
+                    args,
+                    has_self,
+                    LexLocation::new(arg_start, arg_end),
+                )
             }
-            LexType::LeftSquareBracket => {}
-            LexType::RawString(_) | LexType::QuotedString(_) => {}
-            _ => {}
-        }
+            // <func>{<table>}
+            LexType::LeftCurlyBracket => {
+                let arg_start = self.get_location().get_end();
+                let expr = self.parse_table_constructor()?;
+                let arg_end = self.get_previous_location().get_end();
+
+                ExprCall::new(
+                    LexLocation::new(
+                        func.get_location().get_begin(),
+                        expr.get_location().get_end(),
+                    ),
+                    func,
+                    vec![expr],
+                    has_self,
+                    LexLocation::new(arg_start, arg_end),
+                )
+            }
+            // <func>"string"
+            LexType::RawString(_) | LexType::QuotedString(_) => {
+                let arg_location = self.get_location();
+                let expr = self.parse_string_expr()?;
+
+                ExprCall::new(
+                    LexLocation::new(
+                        func.get_location().get_begin(),
+                        expr.get_location().get_end(),
+                    ),
+                    func,
+                    vec![expr],
+                    has_self,
+                    arg_location,
+                )
+            }
+            _ => return Err(self.report_expr_error("unexpected function call")),
+        })
     }
 
     fn parse_primary_expr(&mut self, as_statement: bool) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        let begin = self.get_location().get_begin();
+        let start = self.get_location();
         let mut expr = self.parse_prefix_expr()?;
-
-        loop {
+        Ok(loop {
             match self.get_lexeme() {
+                // <expr>.<index name>
                 LexType::Dot => {
-                    let operator_position = self.get_location().get_begin();
-                    self.next_lexeme();
+                    let op_position = self.get_location().get_begin();
+                    let (index_name, index_location) = self.parse_name()?;
 
-                    let (index_name, index_location) = self.parse_name("")?;
                     expr = ExprIndexName::new(
-                        LexLocation::new(begin, index_location.get_end()),
+                        LexLocation::new(start.get_begin(), index_location.get_end()),
                         expr,
                         index_name,
                         index_location,
-                        operator_position,
+                        op_position,
                         '.',
                     );
                 }
+                // <expr>[<index_expr>]
                 LexType::LeftSquareBracket => {
                     self.next_lexeme();
-
-                    let index = self.parse_expr(0);
-                    let end = self.get_location().get_end();
-
-                    if LexType::RightSquareBracket == self.get_lexeme() {
-                        self.next_lexeme();
-                    } else {
-                        return Err(self.report_expr_error("unexpected ']'"));
+                    let index = self.parse_expr()?;
+                    let end = self.get_location();
+                    if self.get_lexeme() != LexType::RightSquareBracket {
+                        return Err(self.report_expr_error("unexpected ]"));
                     }
-
-                    expr = ExprIndexExpr::new(LexLocation::new(begin, end), expr, index)
-                }
-                LexType::Colon => {
-                    let operator_position = self.get_location().get_begin();
                     self.next_lexeme();
 
-                    let (index_name, index_location) = self.parse_name("method name")?;
-                    expr = ExprIndexName::new(
-                        LexLocation::new(begin, index_location.get_end()),
+                    expr = ExprIndexExpr::new(
+                        LexLocation::new(start.get_begin(), end.get_end()),
                         expr,
-                        index_name,
-                        index_location,
-                        operator_position,
-                        ':',
+                        index,
                     );
                 }
-                LexType::LeftRoundBracket => {}
-                LexType::LeftCurlyBracket | LexType::RawString(_) | LexType::QuotedString(_) => {}
-                _ => break,
-            }
-        }
+                // <expr>:<index_name>
+                LexType::Colon => {
+                    let op_position = self.get_location().get_begin();
+                    self.next_lexeme();
 
-        Ok(expr)
+                    let (index, index_location) = self.parse_name()?;
+                    let func = ExprIndexName::new(
+                        LexLocation::new(start.get_begin(), index_location.get_end()),
+                        expr,
+                        index,
+                        index_location,
+                        op_position,
+                        ':',
+                    );
+
+                    expr = self.parse_function_args_expr(func, true, index_location)?;
+                }
+                // <expr>(...) | {<table>} | "<string>"
+                LexType::LeftRoundBracket
+                | LexType::LeftCurlyBracket
+                | LexType::QuotedString(_)
+                | LexType::RawString(_) => {
+                    expr = self.parse_function_args_expr(expr, false, LexLocation::zero())?;
+                }
+                _ => break expr,
+            }
+        })
+    }
+
+    fn parse_if_else_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let mut has_else = false;
+        let start = self.get_location().get_begin();
+        self.next_lexeme();
+
+        let condition = self.parse_expr()?;
+
+        if self.get_lexeme() != LexType::Then {
+            return Err(self.report_expr_error("unexpected then"));
+        }
+        self.next_lexeme();
+        let true_expr = self.parse_expr()?;
+
+        Ok(match self.get_lexeme() {
+            LexType::ElseIf => {
+                let false_expr = self.parse_if_else_expr()?;
+
+                ExprIfElse::new(
+                    LexLocation::new(start, false_expr.get_location().get_end()),
+                    condition,
+                    Some(true_expr),
+                    Some(false_expr),
+                )
+            }
+            LexType::Else => {
+                self.next_lexeme();
+
+                let false_expr = self.parse_expr()?;
+
+                ExprIfElse::new(
+                    LexLocation::new(start, false_expr.get_location().get_end()),
+                    condition,
+                    Some(true_expr),
+                    Some(false_expr),
+                )
+            }
+            LexType::End => {
+                self.next_lexeme();
+
+                ExprIfElse::new(
+                    LexLocation::new(start, self.get_location().get_end()),
+                    condition,
+                    Some(true_expr),
+                    None,
+                )
+            }
+            _ => return Err(self.report_expr_error("unexpected if then expr")),
+        })
+    }
+
+    fn parse_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        // TODO
     }
 }
 
@@ -408,7 +476,7 @@ mod tests {
         let mut parser = Parser::new("name_1 name_2");
 
         for i in 0..2 {
-            if let Ok(result) = parser.expr_name("") {
+            if let Ok(result) = parser.parse_name() {
                 assert_eq!(result.0, AstName::new(expect.get(i).unwrap().clone()));
 
                 parser.next_lexeme();
@@ -424,14 +492,12 @@ mod tests {
 
         let mut parser = Parser::new("\"foo\"   'bar'");
         for i in 0..2 {
-            if let Ok(result) = parser.expr_string() {
+            if let Ok(result) = parser.parse_string_expr() {
                 if let AstNodePayload::ExprConstantString(value) = result.get_payload() {
                     assert_eq!(value, *expect.get(i).unwrap());
                 } else {
                     panic!("failed");
                 }
-
-                parser.next_lexeme();
             } else {
                 panic!("failed");
             }
@@ -443,14 +509,12 @@ mod tests {
         let test_fn = |t: &str, expect_value: f64| {
             let mut parser = Parser::new(t);
 
-            if let Ok(result) = parser.expr_number("") {
+            if let Ok(result) = parser.parse_number_expr("") {
                 if let AstNodePayload::ExprConstantNumber(value) = result.get_payload() {
                     assert_eq!(value, expect_value);
                 } else {
                     panic!("failed");
                 }
-
-                parser.next_lexeme();
             } else {
                 panic!("failed");
             };
@@ -464,5 +528,36 @@ mod tests {
         test_fn(".32", 0.32_f64);
         test_fn("0.32_33", 0.3233_f64);
         test_fn("103_4.32_33", 1034.3233_f64);
+    }
+
+    #[test]
+    fn parse_expr_bool() {
+        let expect = vec![true, false];
+        let mut parser = Parser::new("true false");
+
+        for i in 0..2 {
+            if let Ok(result) = parser.parse_bool_expr() {
+                if let AstNodePayload::ExprConstantBool(value) = result.get_payload() {
+                    assert_eq!(value, *expect.get(i).unwrap());
+                } else {
+                    panic!("failed");
+                }
+            } else {
+                panic!("failed");
+            }
+        }
+    }
+
+    #[test]
+    fn parse_expr_nil() {
+        let mut parser = Parser::new("nil");
+        if let Ok(result) = parser.parse_nil_expr() {
+            assert_eq!(
+                AstNodePayload::ExprConstantNil.get_type(),
+                result.get_payload().get_type()
+            )
+        } else {
+            panic!("failed");
+        }
     }
 }

@@ -12,6 +12,65 @@ pub use name::AstName;
 pub use stat::*;
 pub use type_::*;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum AstNodePayloadType {
+    None,
+
+    ExprGroup,
+    ExprConstantNil,
+    ExprConstantBool,
+    ExprConstantNumber,
+    ExprConstantString,
+    ExprLocal,
+    ExprGlobal,
+    ExprVarargs,
+    ExprCall,
+    ExprIndexName,
+    ExprIndexExpr,
+    ExprBinary,
+    ExprFunction,
+    ExprIfElse,
+    ExprTable,
+    ExprTypeAssertion,
+    ExprUnary,
+    ExprError,
+
+    StatAssign,
+    StatBlock,
+    StatCompoundAssign,
+    StatDeclareClass,
+    StatDeclareFunction,
+    StatDeclareGlobal,
+    StatExpr,
+    StatForIn,
+    StatFunction,
+    StatLocal,
+    StatLocalFunction,
+    StatBreak,
+    StatContinue,
+    StatFor,
+    StatIf,
+    StatRepeat,
+    StatReturn,
+    StatWhile,
+    StatTypeAlias,
+    StatError,
+
+    TypeError,
+    TypeFunction,
+    TypeIntersection,
+    TypeReference,
+    TypeSingletonBool,
+    TypeSingletonString,
+    TypeTable,
+    TypeTypeof,
+    TypeUnion,
+
+    TypePackExplicit,
+    TypePackGeneric,
+    TypePackVariadic,
+}
+
 #[derive(Clone)]
 pub enum AstNodePayload {
     None,
@@ -21,7 +80,7 @@ pub enum AstNodePayload {
     ExprConstantBool(bool),
     ExprConstantNumber(f64),
     ExprConstantString(String),
-    ExprLocal(ExprLocal),
+    ExprLocal(Box<ExprLocal>),
     ExprGlobal(AstName),
     ExprVarargs,
     ExprCall(Box<ExprCall>),
@@ -58,7 +117,7 @@ pub enum AstNodePayload {
 
     TypeError(Box<TypeError>),
     TypeFunction(Box<TypeFunction>),
-    TypeIntersection(Box<TypeIntersection>),
+    TypeIntersection(Vec<Box<AstType>>),
     TypeReference(Box<TypeReference>),
     TypeSingletonBool(bool),
     TypeSingletonString(String),
@@ -132,6 +191,17 @@ impl AstNode {
     }
 }
 
+impl AstType {
+    pub fn is_type_pack(&self) -> bool {
+        match self.payload {
+            AstNodePayload::TypePackVariadic(_)
+            | AstNodePayload::TypePackGeneric(_)
+            | AstNodePayload::TypePackExplicit(_) => true,
+            _ => false,
+        }
+    }
+}
+
 impl AstStat {
     pub fn set_has_semicolon(&mut self, has_semicolon: bool) {
         self.has_semicolon = has_semicolon;
@@ -141,7 +211,7 @@ impl AstStat {
 #[derive(Clone)]
 pub struct AstTypeList {
     types: Vec<AstType>,
-    tail_type: AstTypePack,
+    tail_type: Box<AstTypePack>,
 }
 
 impl AstNodePayload {
@@ -189,7 +259,7 @@ impl AstNodePayload {
             | &Self::StatReturn(_)
             | &Self::StatWhile(_)
             | &Self::StatTypeAlias(_)
-            | &Self::ExprError(_) => true,
+            | &Self::StatError(_) => true,
             _ => false,
         }
     }
@@ -206,6 +276,61 @@ impl AstNodePayload {
             | &Self::TypeTypeof(_)
             | &Self::TypeUnion(_) => true,
             _ => false,
+        }
+    }
+
+    pub fn get_type(&self) -> AstNodePayloadType {
+        match self {
+            &Self::ExprError(_) => AstNodePayloadType::ExprError,
+            &Self::ExprGroup(_) => AstNodePayloadType::ExprGroup,
+            &Self::ExprConstantNil => AstNodePayloadType::ExprConstantNil,
+            &Self::ExprConstantBool(_) => AstNodePayloadType::ExprConstantBool,
+            &Self::ExprConstantNumber(_) => AstNodePayloadType::ExprConstantNumber,
+            &Self::ExprLocal(_) => AstNodePayloadType::ExprLocal,
+            &Self::ExprGlobal(_) => AstNodePayloadType::ExprGlobal,
+            &Self::ExprVarargs => AstNodePayloadType::ExprVarargs,
+            &Self::ExprCall(_) => AstNodePayloadType::ExprCall,
+            &Self::ExprIndexName(_) => AstNodePayloadType::ExprIndexName,
+            &Self::ExprIndexExpr(_) => AstNodePayloadType::ExprIndexExpr,
+            &Self::ExprBinary(_) => AstNodePayloadType::ExprBinary,
+            &Self::ExprFunction(_) => AstNodePayloadType::ExprFunction,
+            &Self::ExprIfElse(_) => AstNodePayloadType::ExprIfElse,
+            &Self::ExprTable(_) => AstNodePayloadType::ExprTable,
+            &Self::ExprTypeAssertion(_) => AstNodePayloadType::ExprTypeAssertion,
+            &Self::ExprUnary(_) => AstNodePayloadType::ExprUnary,
+
+            &Self::StatAssign(_) => AstNodePayloadType::StatAssign,
+            &Self::StatBlock(_) => AstNodePayloadType::StatBlock,
+            &Self::StatCompoundAssign(_) => AstNodePayloadType::StatCompoundAssign,
+            &Self::StatDeclareClass(_) => AstNodePayloadType::StatDeclareClass,
+            &Self::StatDeclareFunction(_) => AstNodePayloadType::StatDeclareFunction,
+            &Self::StatDeclareGlobal(_) => AstNodePayloadType::StatDeclareGlobal,
+            &Self::StatExpr(_) => AstNodePayloadType::StatExpr,
+            &Self::StatForIn(_) => AstNodePayloadType::StatForIn,
+            &Self::StatFunction(_) => AstNodePayloadType::StatFunction,
+            &Self::StatLocal(_) => AstNodePayloadType::StatLocal,
+            &Self::StatLocalFunction(_) => AstNodePayloadType::StatLocalFunction,
+            &Self::StatBreak => AstNodePayloadType::StatBreak,
+            &Self::StatContinue => AstNodePayloadType::StatContinue,
+            &Self::StatFor(_) => AstNodePayloadType::StatFor,
+            &Self::StatIf(_) => AstNodePayloadType::StatIf,
+            &Self::StatRepeat(_) => AstNodePayloadType::StatRepeat,
+            &Self::StatReturn(_) => AstNodePayloadType::StatReturn,
+            &Self::StatWhile(_) => AstNodePayloadType::StatWhile,
+            &Self::StatTypeAlias(_) => AstNodePayloadType::StatTypeAlias,
+            &Self::StatError(_) => AstNodePayloadType::StatError,
+
+            &Self::TypeError(_) => AstNodePayloadType::TypeError,
+            &Self::TypeFunction(_) => AstNodePayloadType::TypeFunction,
+            &Self::TypeIntersection(_) => AstNodePayloadType::TypeIntersection,
+            &Self::TypeReference(_) => AstNodePayloadType::TypeReference,
+            &Self::TypeSingletonBool(_) => AstNodePayloadType::TypeSingletonBool,
+            &Self::TypeSingletonString(_) => AstNodePayloadType::TypeSingletonString,
+            &Self::TypeTable(_) => AstNodePayloadType::TypeTable,
+            &Self::TypeTypeof(_) => AstNodePayloadType::TypeTypeof,
+            &Self::TypeUnion(_) => AstNodePayloadType::TypeUnion,
+
+            _ => AstNodePayloadType::None,
         }
     }
 }

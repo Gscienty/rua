@@ -4,8 +4,7 @@ use super::{super::LexLocation, AstName, AstNode};
 pub struct AstLocal {
     name: AstName,
     location: LexLocation,
-    shadow: Box<AstLocal>,
-    function_depth: u32,
+    function_depth: usize,
     loop_depth: u32,
 
     annotation: Box<AstNode>,
@@ -15,15 +14,13 @@ impl AstLocal {
     pub fn new(
         name: AstName,
         location: LexLocation,
-        shadow: Box<Self>,
-        function_depth: u32,
+        function_depth: usize,
         loop_depth: u32,
         annotation: Box<AstNode>,
     ) -> Self {
         AstLocal {
             name,
             location,
-            shadow,
             function_depth,
             loop_depth,
             annotation,
@@ -34,7 +31,7 @@ impl AstLocal {
         self.name.clone()
     }
 
-    pub fn get_shadow(&self) -> Box<AstLocal> {
-        self.shadow.clone()
+    pub fn get_function_depth(&self) -> usize {
+        self.function_depth
     }
 }

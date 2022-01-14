@@ -47,6 +47,9 @@ pub enum LexType {
     BrokenString,
     BrokenComment,
     BrokenUnicode,
+    SingletonOr,
+    SingletonAnd,
+    QuestionMark,
     Error,
     Begin,
     And,
@@ -145,6 +148,9 @@ impl LexType {
             LexType::True => 67,
             LexType::Until => 68,
             LexType::While => 69,
+            LexType::SingletonOr => 70,
+            LexType::SingletonAnd => 71,
+            LexType::QuestionMark => 72,
         }
     }
 
@@ -251,6 +257,9 @@ impl ToString for LexType {
             LexType::True => "True",
             LexType::Until => "Until",
             LexType::While => "While",
+            LexType::SingletonOr => "SingletonOr",
+            LexType::SingletonAnd => "SingletonAnd",
+            LexType::QuestionMark => "QuestionMark",
         })
     }
 }

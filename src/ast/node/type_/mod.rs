@@ -1,22 +1,24 @@
 mod error;
 mod function;
 mod intersection;
+mod pack;
 mod reference;
+mod singleton;
 mod table;
+mod typeof_;
+mod union;
 
 pub use error::TypeError;
 pub use function::TypeFunction;
-pub use intersection::TypeIntersection;
+pub use intersection::*;
+pub use pack::*;
 pub use reference::TypeReference;
+pub use singleton::*;
 pub use table::TypeTable;
+pub use typeof_::*;
+pub use union::*;
 
-use super::{super::LexLocation, AstName, AstType, AstTypePack};
-
-#[derive(Clone)]
-pub struct AstTypeOrPack {
-    type_: Option<Box<AstType>>,
-    type_pack: Option<Box<AstTypePack>>,
-}
+use super::{super::LexLocation, AstName, AstType};
 
 #[derive(Clone)]
 pub struct AstTableProp {

@@ -1,36 +1,26 @@
-use super::super::{AstExpr, AstNodePayload};
+use super::super::{AstExpr, AstNodePayload, LexLocation};
 
 #[derive(Clone)]
 pub struct ExprIfElse {
     condition: Box<AstExpr>,
-    has_then: bool,
-    true_expr: Box<AstExpr>,
-    has_else: bool,
-    false_expr: Box<AstExpr>,
+    true_expr: Option<Box<AstExpr>>,
+    false_expr: Option<Box<AstExpr>>,
 }
 
 impl ExprIfElse {
-    pub fn new_only_then(condition: Box<AstExpr>, true_expr: Box<AstExpr>) -> AstNodePayload {
-        AstNodePayload::ExprIfElse(Box::new(ExprIfElse {
-            condition,
-            has_then: true,
-            true_expr,
-            has_else: false,
-            false_expr: AstExpr::new_nil(),
-        }))
-    }
-
     pub fn new(
+        location: LexLocation,
         condition: Box<AstExpr>,
-        true_expr: Box<AstExpr>,
-        false_expr: Box<AstExpr>,
-    ) -> AstNodePayload {
-        AstNodePayload::ExprIfElse(Box::new(ExprIfElse {
-            condition,
-            has_then: true,
-            true_expr,
-            has_else: true,
-            false_expr,
-        }))
+        true_expr: Option<Box<AstExpr>>,
+        false_expr: Option<Box<AstExpr>>,
+    ) -> Box<AstExpr> {
+        AstExpr::new(
+            location,
+            AstNodePayload::ExprIfElse(Box::new(ExprIfElse {
+                condition,
+                true_expr,
+                false_expr,
+            })),
+        )
     }
 }

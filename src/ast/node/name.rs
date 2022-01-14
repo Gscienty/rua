@@ -45,4 +45,8 @@ impl AstName {
 
         hash_value
     }
+
+    pub fn get_value(&self) -> String {
+        self.value.clone()
+    }
 }

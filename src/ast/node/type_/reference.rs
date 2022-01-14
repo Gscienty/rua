@@ -1,10 +1,26 @@
-use super::{super::AstName, AstTypeOrPack};
+use super::super::{AstName, AstNodePayload, AstType, LexLocation};
 
 #[derive(Clone)]
 pub struct TypeReference {
-    has_prefix: bool,
-    has_parameter_list: bool,
-    prefix: AstName,
+    prefix: Option<AstName>,
     name: AstName,
-    parameters: Vec<AstTypeOrPack>,
+    parameters: Option<Vec<Box<AstType>>>,
+}
+
+impl TypeReference {
+    pub fn new(
+        location: LexLocation,
+        prefix: Option<AstName>,
+        name: AstName,
+        parameters: Option<Vec<Box<AstType>>>,
+    ) -> Box<AstType> {
+        AstType::new(
+            location,
+            AstNodePayload::TypeReference(Box::new(TypeReference {
+                prefix,
+                name,
+                parameters,
+            })),
+        )
+    }
 }
