@@ -135,7 +135,7 @@ impl<'src_lf> Parser<'src_lf> {
         Ok(value as f64)
     }
 
-    fn parse_number_expr(&mut self, error_msg: &str) -> Result<Box<AstExpr>, Box<AstExpr>> {
+    fn parse_number_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
         if let LexType::Number(value) = self.get_lexeme() {
             let location = self.get_location();
             self.next_lexeme();
@@ -159,21 +159,21 @@ impl<'src_lf> Parser<'src_lf> {
                             if let Ok(value) = Parser::parse_binary(clear_value_chars) {
                                 value
                             } else {
-                                return Err(self.report_expr_error(error_msg));
+                                return Err(self.report_expr_error("unexpected binary number"));
                             }
                         }
                         Some('x') | Some('X') => {
                             if let Ok(value) = Parser::parse_hex(clear_value_chars) {
                                 value
                             } else {
-                                return Err(self.report_expr_error(error_msg));
+                                return Err(self.report_expr_error("unexpected hex number"));
                             }
                         }
                         _ => {
                             if let Ok(value) = dec_fn() {
                                 value
                             } else {
-                                return Err(self.report_expr_error(error_msg));
+                                return Err(self.report_expr_error("unexpected dec number"));
                             }
                         }
                     }
@@ -181,26 +181,26 @@ impl<'src_lf> Parser<'src_lf> {
                     if let Ok(value) = dec_fn() {
                         value
                     } else {
-                        return Err(self.report_expr_error(error_msg));
+                        return Err(self.report_expr_error("unexpected dec number"));
                     }
                 },
             ))
         } else {
-            Err(self.report_expr_error(error_msg))
+            Err(self.report_expr_error("unexpected number"))
         }
     }
 
-    fn parse_unary_operator(lexeme: LexType) -> Result<UnaryOperator, ()> {
-        Ok(match lexeme {
+    fn parse_unary_operator(&self, lexeme: LexType) -> Option<UnaryOperator> {
+        Some(match lexeme {
             LexType::Not => UnaryOperator::Not,
             LexType::Sub => UnaryOperator::Minus,
             LexType::Sharp => UnaryOperator::Len,
-            _ => return Err(()),
+            _ => return None,
         })
     }
 
-    fn parse_binary_operator(lexeme: LexType) -> Result<BinaryOperator, ()> {
-        Ok(match lexeme {
+    fn parse_binary_operator(&self, lexeme: LexType) -> Option<BinaryOperator> {
+        Some(match lexeme {
             LexType::Add => BinaryOperator::Add,
             LexType::Sub => BinaryOperator::Sub,
             LexType::Mul => BinaryOperator::Mul,
@@ -216,7 +216,7 @@ impl<'src_lf> Parser<'src_lf> {
             LexType::GreaterEqual => BinaryOperator::GreaterEqual,
             LexType::And => BinaryOperator::And,
             LexType::Or => BinaryOperator::Or,
-            _ => return Err(()),
+            _ => return None,
         })
     }
 
@@ -249,7 +249,7 @@ impl<'src_lf> Parser<'src_lf> {
         if self.get_lexeme() == LexType::LeftRoundBracket {
             let start = self.get_location();
             self.next_lexeme();
-            let expr = self.parse_expr()?;
+            let expr = self.parse_expr(0)?;
             let end = self.get_location();
 
             if self.get_lexeme() != LexType::RightRoundBracket {
@@ -268,15 +268,80 @@ impl<'src_lf> Parser<'src_lf> {
     }
 
     fn parse_table_constructor(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        // TODO
+        let mut items: Vec<TableItem> = Vec::new();
+        let start = self.get_location().get_begin();
+
+        if self.get_lexeme() != LexType::LeftCurlyBracket {
+            return Err(self.report_expr_error("unexpected table constructor"));
+        }
+        self.next_lexeme();
+
+        while self.get_lexeme() != LexType::RightCurlyBracket {
+            match self.get_lexeme() {
+                LexType::LeftSquareBracket => {
+                    self.next_lexeme();
+
+                    let key = self.parse_expr(0)?;
+
+                    if self.get_lexeme() != LexType::RightSquareBracket {
+                        return Err(self.report_expr_error("unexpected table constructor"));
+                    }
+                    self.next_lexeme();
+
+                    if self.get_lexeme() != LexType::Assign {
+                        return Err(self.report_expr_error("unexpected table constructor"));
+                    }
+                    self.next_lexeme();
+
+                    let value = self.parse_expr(0)?;
+
+                    items.push(TableItem::new(TableKind::General, key, value));
+                }
+                LexType::Name(_) => {
+                    if self.get_ahead_lexeme() == LexType::Assign {
+                        let (name, name_location) = self.parse_name()?;
+                        
+                        // skip '='
+                        self.next_lexeme();
+
+                        let key = new_constant_string(name_location, name.get_value());
+                        let value = self.parse_expr(0)?;
+
+                        items.push(TableItem::new(TableKind::Record, key, value));
+                    } else {
+                        let expr = self.parse_expr(0)?;
+
+                        items.push(TableItem::new(TableKind::List, AstExpr::new_nil(), expr));
+                    }
+                }
+                _ => {
+                    let expr = self.parse_expr(0)?;
+
+                    items.push(TableItem::new(TableKind::List, AstExpr::new_nil(), expr));
+                }
+            }
+
+            if self.get_lexeme() == LexType::Comma || self.get_lexeme() == LexType::Semicolon {
+                self.next_lexeme();
+            } 
+        }
+
+        if self.get_lexeme() != LexType::RightCurlyBracket {
+            return Err(self.report_expr_error("unexpected table constructor"));
+        }
+        self.next_lexeme();
+
+        let end = self.get_location().get_end();
+
+        Ok(new_expr_table(LexLocation::new(start, end), items))
     }
 
     fn parse_expr_list(&mut self, args: &mut Vec<Box<AstExpr>>) -> Result<(), Box<AstExpr>> {
-        args.push(self.parse_expr()?);
+        args.push(self.parse_expr(0)?);
 
         while self.get_lexeme() == LexType::Comma {
             self.next_lexeme();
-            args.push(self.parse_expr()?);
+            args.push(self.parse_expr(0)?);
         }
 
         Ok(())
@@ -369,7 +434,7 @@ impl<'src_lf> Parser<'src_lf> {
                 // <expr>[<index_expr>]
                 LexType::LeftSquareBracket => {
                     self.next_lexeme();
-                    let index = self.parse_expr()?;
+                    let index = self.parse_expr(0)?;
                     let end = self.get_location();
                     if self.get_lexeme() != LexType::RightSquareBracket {
                         return Err(self.report_expr_error("unexpected ]"));
@@ -416,13 +481,13 @@ impl<'src_lf> Parser<'src_lf> {
         let start = self.get_location().get_begin();
         self.next_lexeme();
 
-        let condition = self.parse_expr()?;
+        let condition = self.parse_expr(0)?;
 
         if self.get_lexeme() != LexType::Then {
             return Err(self.report_expr_error("unexpected then"));
         }
         self.next_lexeme();
-        let true_expr = self.parse_expr()?;
+        let true_expr = self.parse_expr(0)?;
 
         Ok(match self.get_lexeme() {
             LexType::ElseIf => {
@@ -438,7 +503,7 @@ impl<'src_lf> Parser<'src_lf> {
             LexType::Else => {
                 self.next_lexeme();
 
-                let false_expr = self.parse_expr()?;
+                let false_expr = self.parse_expr(0)?;
 
                 ExprIfElse::new(
                     LexLocation::new(start, false_expr.get_location().get_end()),
@@ -461,8 +526,67 @@ impl<'src_lf> Parser<'src_lf> {
         })
     }
 
-    fn parse_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        // TODO
+    fn parse_simple_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let start = self.get_location();
+
+        match self.get_lexeme() {
+            LexType::Nil => self.parse_nil_expr(),
+            LexType::True | LexType::False => self.parse_bool_expr(),
+            LexType::QuotedString(_) | LexType::RawString(_) | LexType::BrokenString => self.parse_string_expr(),
+            LexType::Number(_) => self.parse_number_expr(),
+            // TODO impl function
+            LexType::Function => Err(self.report_expr_error("todo")),
+            LexType::Dot3 => {
+                self.next_lexeme();
+
+                if let Some(function_stack) = self.function_stack.last() {
+                    Ok(new_expr_varargs(start))
+            } else {
+                Err(self.report_expr_error("unexpected ..."))
+            }}
+            LexType::LeftCurlyBracket => self.parse_table_constructor(),
+            LexType::If => self.parse_if_else_expr(),
+            _ => self.parse_primary_expr(false),
+        }
+    }
+
+    fn parse_assertion_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let start = self.get_location();
+        let expr = self.parse_simple_expr()?;
+
+        if self.get_lexeme() == LexType::DoubleColon {
+            self.next_lexeme();
+
+            // TODO
+            Err(self.report_expr_error("undo"))
+        } else {
+            Ok(expr)
+        }
+    }
+
+    fn parse_expr(&mut self, limit: usize) -> Result<Box<AstExpr>, Box<AstExpr>> {
+        let start = self.get_location();
+
+        let mut expr = if let Some(operator) = self.parse_unary_operator(self.get_lexeme()) {
+            self.next_lexeme();
+            let sub_expr = self.parse_expr(8)?;
+
+            ExprUnary::new(LexLocation::new(start.get_begin(), sub_expr.get_location().get_end()), operator, sub_expr)
+        } else {
+            self.parse_assertion_expr()?
+        };
+
+        let mut operator = self.parse_binary_operator(self.get_lexeme());
+        while operator.is_some() {
+            self.next_lexeme();
+
+            let next = self.parse_expr(limit)?;
+            expr = ExprBinary::new(LexLocation::new(start.get_begin(), next.get_location().get_end()), operator.unwrap(), expr, next);
+
+            operator = self.parse_binary_operator(self.get_lexeme());
+        }
+
+        Ok(expr)
     }
 }
 
@@ -509,7 +633,7 @@ mod tests {
         let test_fn = |t: &str, expect_value: f64| {
             let mut parser = Parser::new(t);
 
-            if let Ok(result) = parser.parse_number_expr("") {
+            if let Ok(result) = parser.parse_number_expr() {
                 if let AstNodePayload::ExprConstantNumber(value) = result.get_payload() {
                     assert_eq!(value, expect_value);
                 } else {

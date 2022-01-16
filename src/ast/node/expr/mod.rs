@@ -12,7 +12,9 @@ mod local;
 mod table;
 mod type_assertion;
 mod unary;
+mod varargs;
 
+pub use varargs::*;
 pub use binary::*;
 pub use call::ExprCall;
 pub use constant::*;
