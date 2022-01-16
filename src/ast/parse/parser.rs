@@ -38,6 +38,17 @@ impl<'src_lf> Parser<'src_lf> {
         result
     }
 
+    fn report_type_error(&mut self, is_mission: bool, error_msg: &str) -> Box<AstType> {
+        self.error_msgs.push(String::from(error_msg));
+
+        TypeError::new(
+            self.get_location(),
+            Vec::new(),
+            is_mission,
+            self.error_msgs.len() - 1,
+        )
+    }
+
     fn report_expr_error(&mut self, error_msg: &str) -> Box<AstExpr> {
         self.error_msgs.push(String::from(error_msg));
 
@@ -86,6 +97,8 @@ impl<'src_lf> Parser<'src_lf> {
 
             Ok(new_constant_nil(location))
         } else {
+            self.next_lexeme();
+
             Err(self.report_expr_error("unexpected nil"))
         }
     }
@@ -101,9 +114,14 @@ impl<'src_lf> Parser<'src_lf> {
             }
             LexType::False => {
                 self.next_lexeme();
+
                 Ok(new_constant_bool(location, false))
             }
-            _ => Err(self.report_expr_error("unexpected bool")),
+            _ => {
+                self.next_lexeme();
+
+                Err(self.report_expr_error("unexpected bool"))
+            }
         }
     }
 
@@ -300,7 +318,7 @@ impl<'src_lf> Parser<'src_lf> {
                 LexType::Name(_) => {
                     if self.get_ahead_lexeme() == LexType::Assign {
                         let (name, name_location) = self.parse_name()?;
-                        
+
                         // skip '='
                         self.next_lexeme();
 
@@ -323,7 +341,7 @@ impl<'src_lf> Parser<'src_lf> {
 
             if self.get_lexeme() == LexType::Comma || self.get_lexeme() == LexType::Semicolon {
                 self.next_lexeme();
-            } 
+            }
         }
 
         if self.get_lexeme() != LexType::RightCurlyBracket {
@@ -532,7 +550,9 @@ impl<'src_lf> Parser<'src_lf> {
         match self.get_lexeme() {
             LexType::Nil => self.parse_nil_expr(),
             LexType::True | LexType::False => self.parse_bool_expr(),
-            LexType::QuotedString(_) | LexType::RawString(_) | LexType::BrokenString => self.parse_string_expr(),
+            LexType::QuotedString(_) | LexType::RawString(_) | LexType::BrokenString => {
+                self.parse_string_expr()
+            }
             LexType::Number(_) => self.parse_number_expr(),
             // TODO impl function
             LexType::Function => Err(self.report_expr_error("todo")),
@@ -541,9 +561,10 @@ impl<'src_lf> Parser<'src_lf> {
 
                 if let Some(function_stack) = self.function_stack.last() {
                     Ok(new_expr_varargs(start))
-            } else {
-                Err(self.report_expr_error("unexpected ..."))
-            }}
+                } else {
+                    Err(self.report_expr_error("unexpected ..."))
+                }
+            }
             LexType::LeftCurlyBracket => self.parse_table_constructor(),
             LexType::If => self.parse_if_else_expr(),
             _ => self.parse_primary_expr(false),
@@ -571,7 +592,11 @@ impl<'src_lf> Parser<'src_lf> {
             self.next_lexeme();
             let sub_expr = self.parse_expr(8)?;
 
-            ExprUnary::new(LexLocation::new(start.get_begin(), sub_expr.get_location().get_end()), operator, sub_expr)
+            ExprUnary::new(
+                LexLocation::new(start.get_begin(), sub_expr.get_location().get_end()),
+                operator,
+                sub_expr,
+            )
         } else {
             self.parse_assertion_expr()?
         };
@@ -581,12 +606,105 @@ impl<'src_lf> Parser<'src_lf> {
             self.next_lexeme();
 
             let next = self.parse_expr(limit)?;
-            expr = ExprBinary::new(LexLocation::new(start.get_begin(), next.get_location().get_end()), operator.unwrap(), expr, next);
+            expr = ExprBinary::new(
+                LexLocation::new(start.get_begin(), next.get_location().get_end()),
+                operator.unwrap(),
+                expr,
+                next,
+            );
 
             operator = self.parse_binary_operator(self.get_lexeme());
         }
 
         Ok(expr)
+    }
+
+    fn parse_nil_type(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let location = self.get_location();
+
+        if self.get_lexeme().eq(&LexType::Nil) {
+            self.next_lexeme();
+
+            Ok(TypeReference::new(
+                location,
+                None,
+                AstName::new(String::from("nil")),
+                None,
+            ))
+        } else {
+            Err(self.report_type_error(true, "unexpected nil type reference"))
+        }
+    }
+
+    fn parse_bool_type(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let location = self.get_location();
+
+        match self.get_lexeme() {
+            LexType::True => {
+                self.next_lexeme();
+
+                Ok(new_type_singleton_bool(location, true))
+            }
+            LexType::False => {
+                self.next_lexeme();
+
+                Ok(new_type_singleton_bool(location, false))
+            }
+            _ => {
+                self.next_lexeme();
+
+                Err(self.report_type_error(true, "unexpected type singleton bool"))
+            }
+        }
+    }
+
+    fn parse_string_type(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let location = self.get_location();
+
+        match self.get_lexeme() {
+            LexType::RawString(value) => {
+                self.next_lexeme();
+
+                Ok(new_type_singleton_string(location, value))
+            }
+            LexType::QuotedString(value) => {
+                self.next_lexeme();
+
+                Ok(new_type_singleton_string(location, value))
+            }
+            LexType::BrokenString => {
+                self.next_lexeme();
+
+                Err(self.report_type_error(false, "unexpected type singleton string broken string"))
+            }
+            _ => {
+                self.next_lexeme();
+
+                Err(self.report_type_error(true, "unexpected type singleton string"))
+            }
+        }
+    }
+
+    fn parse_simple_type_annotation(
+        &mut self,
+        allow_pack: bool,
+    ) -> Result<(Option<Box<AstType>>, Option<Box<AstTypePack>>), Box<AstType>> {
+        let begin = self.get_location();
+
+        Ok(match self.get_lexeme() {
+            LexType::Nil => {
+                let annotation = self.parse_nil_type()?;
+
+                (Some(annotation), None)
+            }
+            LexType::True | LexType::False => {
+                let annotation = self.parse_bool_type()?;
+
+                (Some(annotation), None)
+            }
+            // TODO
+            _ => return Err(self.report_type_error(true, "unexpected type")),
+        })
     }
 }
 
