@@ -256,7 +256,9 @@ impl<'src_lf> Parser<'src_lf> {
             ExprLocal::new(
                 location,
                 local.clone(),
-                local.get_function_depth() != self.function_stack.len() - 1,
+                local
+                    .get_function_depth()
+                    .ne(&(self.function_stack.len() - 1)),
             )
         } else {
             new_expr_global(location, name)
@@ -264,13 +266,13 @@ impl<'src_lf> Parser<'src_lf> {
     }
 
     fn parse_prefix_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        if self.get_lexeme() == LexType::LeftRoundBracket {
+        if self.get_lexeme().eq(&LexType::LeftRoundBracket) {
             let start = self.get_location();
             self.next_lexeme();
             let expr = self.parse_expr(0)?;
             let end = self.get_location();
 
-            if self.get_lexeme() != LexType::RightRoundBracket {
+            if self.get_lexeme().ne(&LexType::RightRoundBracket) {
                 Err(self.report_expr_error("unexpected right round bracket"))
             } else {
                 self.next_lexeme();
@@ -289,24 +291,24 @@ impl<'src_lf> Parser<'src_lf> {
         let mut items: Vec<TableItem> = Vec::new();
         let start = self.get_location().get_begin();
 
-        if self.get_lexeme() != LexType::LeftCurlyBracket {
+        if self.get_lexeme().ne(&LexType::LeftCurlyBracket) {
             return Err(self.report_expr_error("unexpected table constructor"));
         }
         self.next_lexeme();
 
-        while self.get_lexeme() != LexType::RightCurlyBracket {
+        while self.get_lexeme().ne(&LexType::RightCurlyBracket) {
             match self.get_lexeme() {
                 LexType::LeftSquareBracket => {
                     self.next_lexeme();
 
                     let key = self.parse_expr(0)?;
 
-                    if self.get_lexeme() != LexType::RightSquareBracket {
+                    if self.get_lexeme().ne(&LexType::RightSquareBracket) {
                         return Err(self.report_expr_error("unexpected table constructor"));
                     }
                     self.next_lexeme();
 
-                    if self.get_lexeme() != LexType::Assign {
+                    if self.get_lexeme().ne(&LexType::Assign) {
                         return Err(self.report_expr_error("unexpected table constructor"));
                     }
                     self.next_lexeme();
@@ -316,7 +318,7 @@ impl<'src_lf> Parser<'src_lf> {
                     items.push(TableItem::new(TableKind::General, key, value));
                 }
                 LexType::Name(_) => {
-                    if self.get_ahead_lexeme() == LexType::Assign {
+                    if self.get_ahead_lexeme().eq(&LexType::Assign) {
                         let (name, name_location) = self.parse_name()?;
 
                         // skip '='
@@ -339,12 +341,12 @@ impl<'src_lf> Parser<'src_lf> {
                 }
             }
 
-            if self.get_lexeme() == LexType::Comma || self.get_lexeme() == LexType::Semicolon {
+            if self.get_lexeme().eq(&LexType::Comma) || self.get_lexeme().eq(&LexType::Semicolon) {
                 self.next_lexeme();
             }
         }
 
-        if self.get_lexeme() != LexType::RightCurlyBracket {
+        if self.get_lexeme().ne(&LexType::RightCurlyBracket) {
             return Err(self.report_expr_error("unexpected table constructor"));
         }
         self.next_lexeme();
@@ -357,7 +359,7 @@ impl<'src_lf> Parser<'src_lf> {
     fn parse_expr_list(&mut self, args: &mut Vec<Box<AstExpr>>) -> Result<(), Box<AstExpr>> {
         args.push(self.parse_expr(0)?);
 
-        while self.get_lexeme() == LexType::Comma {
+        while self.get_lexeme().eq(&LexType::Comma) {
             self.next_lexeme();
             args.push(self.parse_expr(0)?);
         }
@@ -378,7 +380,7 @@ impl<'src_lf> Parser<'src_lf> {
                 self.next_lexeme();
 
                 let mut args: Vec<Box<AstExpr>> = Vec::new();
-                if self.get_lexeme() != LexType::RightRoundBracket {
+                if self.get_lexeme().ne(&LexType::RightRoundBracket) {
                     self.parse_expr_list(&mut args)?;
                 }
                 let end = self.get_location();
@@ -454,7 +456,7 @@ impl<'src_lf> Parser<'src_lf> {
                     self.next_lexeme();
                     let index = self.parse_expr(0)?;
                     let end = self.get_location();
-                    if self.get_lexeme() != LexType::RightSquareBracket {
+                    if self.get_lexeme().ne(&LexType::RightSquareBracket) {
                         return Err(self.report_expr_error("unexpected ]"));
                     }
                     self.next_lexeme();
@@ -501,7 +503,7 @@ impl<'src_lf> Parser<'src_lf> {
 
         let condition = self.parse_expr(0)?;
 
-        if self.get_lexeme() != LexType::Then {
+        if self.get_lexeme().ne(&LexType::Then) {
             return Err(self.report_expr_error("unexpected then"));
         }
         self.next_lexeme();
@@ -572,17 +574,22 @@ impl<'src_lf> Parser<'src_lf> {
     }
 
     fn parse_assertion_expr(&mut self) -> Result<Box<AstExpr>, Box<AstExpr>> {
-        let start = self.get_location();
+        let begin = self.get_location().get_begin();
         let expr = self.parse_simple_expr()?;
 
-        if self.get_lexeme() == LexType::DoubleColon {
+        Ok(if self.get_lexeme().eq(&LexType::DoubleColon) {
             self.next_lexeme();
 
-            // TODO
-            Err(self.report_expr_error("undo"))
+            let annotation = self.parse_type_annotation()?;
+
+            ExprTypeAssertion::new(
+                LexLocation::new(begin, annotation.get_location().get_end()),
+                expr,
+                annotation,
+            )
         } else {
-            Ok(expr)
-        }
+            expr
+        })
     }
 
     fn parse_expr(&mut self, limit: usize) -> Result<Box<AstExpr>, Box<AstExpr>> {
@@ -685,11 +692,233 @@ impl<'src_lf> Parser<'src_lf> {
         }
     }
 
+    fn parse_typeof_type(&mut self, begin: LexPosition) -> Result<Box<AstType>, Box<AstType>> {
+        if self.get_lexeme().ne(&LexType::LeftRoundBracket) {
+            return Err(self.report_type_error(false, "unexpected typeof"));
+        }
+        self.next_lexeme();
+
+        let expr = self.parse_expr(0)?;
+        let end = self.get_location().get_end();
+
+        if self.get_lexeme().ne(&LexType::RightRoundBracket) {
+            return Err(self.report_type_error(false, "unexpected typeof"));
+        }
+        self.next_lexeme();
+
+        Ok(new_type_typeof(LexLocation::new(begin, end), expr))
+    }
+
+    fn should_parse_type_pack_annotation(&self) -> bool {
+        match self.get_lexeme() {
+            LexType::Dot3 => true,
+            LexType::Name(_) => self.get_ahead_lexeme().eq(&LexType::Dot3),
+            _ => false,
+        }
+    }
+
+    fn parse_type_annotation(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let begin = self.get_location().get_begin();
+        let mut parts: Vec<Box<AstType>> = Vec::new();
+        if let Some(value) = self.parse_simple_type_annotation(false)?.0 {
+            parts.push(value);
+        } else {
+            return Err(self.report_type_error(false, "unexpected type annotation"));
+        }
+
+        self.parse_type_annotation_parts(&mut parts, begin)
+    }
+
+    fn parse_type_annotation_parts(
+        &mut self,
+        parts: &mut Vec<Box<AstType>>,
+        begin: LexPosition,
+    ) -> Result<Box<AstType>, Box<AstType>> {
+        let mut is_union = false;
+        let mut is_intersection = false;
+        loop {
+            match self.get_lexeme() {
+                LexType::SingletonOr => {
+                    self.next_lexeme();
+
+                    if let Some(value) = self.parse_simple_type_annotation(false)?.0 {
+                        parts.push(value);
+                    } else {
+                        return Err(self.report_type_error(false, "unexpected type annotation"));
+                    }
+                    is_union = true;
+                }
+                LexType::QuestionMark => {
+                    let location = self.get_location();
+
+                    self.next_lexeme();
+                    parts.push(TypeReference::new(
+                        location,
+                        None,
+                        AstName::new(String::from("nil")),
+                        None,
+                    ));
+                    is_union = true;
+                }
+                LexType::SingletonAnd => {
+                    self.next_lexeme();
+
+                    if let Some(value) = self.parse_simple_type_annotation(false)?.0 {
+                        parts.push(value);
+                    } else {
+                        return Err(self.report_type_error(false, "unexpected type annotation"));
+                    }
+                    is_intersection = true;
+                }
+                _ => break,
+            }
+        }
+
+        if parts.len().eq(&1) {
+            Ok(*parts.first().unwrap())
+        } else {
+            let end = self.get_location().get_end();
+            if is_union && is_intersection {
+                Err(self
+                    .report_type_error(false, "mixing union and intersection types is not allowed"))
+            } else if is_union {
+                Ok(new_type_union(LexLocation::new(begin, end), *parts))
+            } else if is_intersection {
+                Ok(new_type_intersection(LexLocation::new(begin, end), *parts))
+            } else {
+                Err(self
+                    .report_type_error(false, "composite type was not an intersection or union"))
+            }
+        }
+    }
+
+    fn parse_type_pack_annotation(&mut self) -> Result<Box<AstTypePack>, Box<AstTypePack>> {
+        Ok(if self.get_lexeme().eq(&LexType::Dot3) {
+            let begin = self.get_location().get_begin();
+            self.next_lexeme();
+            let vararg = self.parse_type_annotation()?;
+
+            new_type_pack_variadic(
+                LexLocation::new(begin, vararg.get_location().get_end()),
+                vararg,
+            )
+        } else {
+            match self.get_lexeme() {
+                LexType::Name(_) => {
+                    if self.get_ahead_lexeme().eq(&LexType::Dot3) {
+                        let (name, name_location) = self.parse_name()?;
+
+                        self.next_lexeme();
+
+                        new_type_pack_generic(name_location, name)
+                    } else {
+                        AstTypePack::new_nil()
+                    }
+                }
+                _ => AstTypePack::new_nil(),
+            }
+        })
+    }
+
+    fn parse_type_or_pack_annotation(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let begin = self.get_location().get_begin();
+
+        let type_or_pack = self.parse_simple_type_annotation(true)?;
+
+        if let Some(type_pack) = type_or_pack.1 {
+            Ok(type_pack)
+        } else if let Some(type_) = type_or_pack.0 {
+            let parts: Vec<Box<AstType>> = Vec::new();
+            parts.push(type_);
+
+            self.parse_type_annotation_parts(&mut parts, begin)
+        } else {
+            Err(self.report_type_error(true, "unexpected simple type annotation"))
+        }
+    }
+
+    fn parse_type_parameters(&mut self) -> Result<Option<Vec<Box<AstTypePack>>>, Box<AstType>> {
+        let parameters: Vec<Box<AstTypePack>> = Vec::new();
+
+        if self.get_lexeme().eq(&LexType::Less) {
+            let begin = self.get_location().get_begin();
+            self.next_lexeme();
+
+            loop {
+                if self.should_parse_type_pack_annotation() {
+                    parameters.push(self.parse_type_pack_annotation()?);
+                } else if self.get_lexeme().eq(&LexType::LeftRoundBracket) {
+                    parameters.push(self.parse_type_or_pack_annotation()?);
+                } else if self.get_lexeme().eq(&LexType::Greater) && parameters.is_empty() {
+                    break;
+                } else {
+                    parameters.push(self.parse_type_annotation()?);
+                }
+
+                if self.get_lexeme().eq(&LexType::Comma) {
+                    self.next_lexeme();
+                } else {
+                    break;
+                }
+            }
+
+            if self.get_lexeme().ne(&LexType::Greater) {
+                return Err(self.report_type_error(false, "unexpected type parameters"));
+            }
+            self.next_lexeme();
+        }
+
+        Ok(if parameters.is_empty() {
+            None
+        } else {
+            Some(parameters)
+        })
+    }
+
+    fn parse_name_type(
+        &mut self,
+        begin: LexPosition,
+        name: AstName,
+    ) -> Result<Box<AstType>, Box<AstType>> {
+        let mut real_name = name;
+        let mut prefix: Option<AstName> = None;
+
+        if self.get_lexeme().eq(&LexType::Dot) {
+            self.next_lexeme();
+
+            prefix = Some(name);
+            let (sub_name, _) = self.parse_name()?;
+            real_name = sub_name;
+        }
+
+        let parameters = self.parse_type_parameters()?;
+
+        let end = self.get_location().get_end();
+        Ok(TypeReference::new(
+            LexLocation::new(begin, end),
+            prefix,
+            real_name,
+            parameters,
+        ))
+    }
+
+    fn parse_name_or_typeof_type(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let begin = self.get_location().get_begin();
+        let prefix: Option<AstName> = None;
+        let (name, _) = self.parse_name()?;
+
+        if name.eq_str("typeof") {
+            self.parse_typeof_type(begin)
+        } else {
+            self.parse_name_type(begin, name)
+        }
+    }
+
     fn parse_simple_type_annotation(
         &mut self,
         allow_pack: bool,
     ) -> Result<(Option<Box<AstType>>, Option<Box<AstTypePack>>), Box<AstType>> {
-        let begin = self.get_location();
+        let begin = self.get_location().get_begin();
 
         Ok(match self.get_lexeme() {
             LexType::Nil => {
@@ -702,7 +931,17 @@ impl<'src_lf> Parser<'src_lf> {
 
                 (Some(annotation), None)
             }
-            // TODO
+            LexType::QuotedString(_) | LexType::RawString(_) | LexType::BrokenString => {
+                let annotation = self.parse_string_type()?;
+
+                (Some(annotation), None)
+            }
+            LexType::Name(_) => {
+                let annotation = self.parse_name_or_typeof_type()?;
+
+                (Some(annotation), None)
+            }
+            // TODO table type annotation and function type annotation
             _ => return Err(self.report_type_error(true, "unexpected type")),
         })
     }
