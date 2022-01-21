@@ -21,15 +21,39 @@ pub use union::*;
 use super::{super::LexLocation, AstName, AstType};
 
 #[derive(Clone)]
-pub struct AstTableProp {
+pub struct TableProp {
     name: AstName,
     location: LexLocation,
     type_: Box<AstType>,
 }
 
+impl TableProp {
+    pub fn new(name: AstName, location: LexLocation, type_: Box<AstType>) -> TableProp {
+        TableProp {
+            name,
+            location,
+            type_,
+        }
+    }
+}
+
 #[derive(Clone)]
-pub struct AstTableIndexer {
+pub struct TableIndexer {
     index_type: Box<AstType>,
     result_type: Box<AstType>,
     location: LexLocation,
+}
+
+impl TableIndexer {
+    pub fn new(
+        index_type: Box<AstType>,
+        result_type: Box<AstType>,
+        location: LexLocation,
+    ) -> TableIndexer {
+        TableIndexer {
+            index_type,
+            result_type,
+            location,
+        }
+    }
 }

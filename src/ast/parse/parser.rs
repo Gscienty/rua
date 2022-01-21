@@ -914,6 +914,229 @@ impl<'src_lf> Parser<'src_lf> {
         }
     }
 
+    fn parse_type_indexer_annotation(&mut self) -> Result<TableIndexer, Box<AstType>> {
+        let begin = self.get_location().get_begin();
+        self.next_lexeme();
+
+        let index = self.parse_type_annotation()?;
+
+        if self.get_lexeme().ne(&LexType::RightSquareBracket) {
+            return Err(self.report_type_error(false, "unexpected parse type indexer annotation"));
+        }
+        self.next_lexeme();
+
+        if self.get_lexeme().ne(&LexType::Colon) {
+            return Err(self.report_type_error(false, "unexpected parse type indexer annotation"));
+        }
+        self.next_lexeme();
+
+        let result = self.parse_type_annotation()?;
+
+        Ok(TableIndexer::new(
+            index,
+            result,
+            LexLocation::new(begin, result.get_location().get_end()),
+        ))
+    }
+
+    fn parse_table_type_annotation(&mut self) -> Result<Box<AstType>, Box<AstType>> {
+        let mut props: Vec<TableProp> = Vec::new();
+        let mut indexer: Option<TableIndexer> = None;
+
+        let begin = self.get_location().get_begin();
+
+        if self.get_lexeme().ne(&LexType::LeftCurlyBracket) {
+            return Err(self.report_type_error(false, "unexpected parse table type annotation"));
+        }
+        self.next_lexeme();
+
+        while self.get_lexeme().ne(&LexType::RightCurlyBracket) {
+            let parse_name_props_append = || -> Result<(), Box<AstType>> {
+                let (name, name_location) = self.parse_name()?;
+
+                if self.get_lexeme().ne(&LexType::Colon) {
+                    return Err(self.report_type_error(false, "table field"));
+                }
+                self.next_lexeme();
+
+                let type_ = self.parse_type_annotation()?;
+
+                props.push(TableProp::new(name, name_location, type_));
+
+                Ok(())
+            };
+
+            if self.get_lexeme().eq(&LexType::LeftSquareBracket) {
+                let parse_string_props_append = |value: String| -> Result<(), Box<AstType>> {
+                    let location = self.get_location();
+                    self.next_lexeme(); // skip LeftSquareBracket
+                    self.next_lexeme(); // skip value
+
+                    if self.get_lexeme().ne(&LexType::RightSquareBracket) {
+                        return Err(self.report_type_error(false, "table field"));
+                    }
+                    self.next_lexeme();
+
+                    if self.get_lexeme().ne(&LexType::Semicolon) {
+                        return Err(self.report_type_error(false, "table field"));
+                    }
+                    self.next_lexeme();
+
+                    let type_ = self.parse_type_annotation()?;
+
+                    if value.is_empty() {
+                        return Err(self.report_type_error(false, "table field"));
+                    } else {
+                        props.push(TableProp::new(AstName::new(value), location, type_));
+                    }
+
+                    Ok(())
+                };
+
+                match self.get_ahead_lexeme() {
+                    LexType::QuotedString(value) => {
+                        parse_string_props_append(value)?;
+                    }
+                    LexType::RawString(value) => {
+                        parse_string_props_append(value)?;
+                    }
+                    _ => {
+                        if indexer.is_some() {
+                            return Err(self.report_type_error(
+                                false,
+                                "cannot have more than one table indexer",
+                            ));
+                        } else {
+                            indexer = Some(self.parse_type_indexer_annotation()?);
+                        }
+                    }
+                }
+            }
+            if props.is_empty() && indexer.is_none() {
+                let parse_indexer = || -> Result<(), Box<AstType>> {
+                    let type_ = self.parse_type_annotation()?;
+
+                    indexer = Some(TableIndexer::new(
+                        TypeReference::new(
+                            type_.get_location(),
+                            None,
+                            AstName::new(String::from("number")),
+                            None,
+                        ),
+                        type_,
+                        type_.get_location(),
+                    ));
+                    Ok(())
+                };
+
+                if let LexType::Name(_) = self.get_lexeme() {
+                    if self.get_ahead_lexeme().eq(&LexType::Colon) {
+                        parse_name_props_append()?;
+                    } else {
+                        parse_indexer()?;
+                        break;
+                    }
+                } else {
+                    parse_indexer()?;
+                    break;
+                }
+            } else {
+                parse_name_props_append()?;
+            }
+
+            match self.get_lexeme() {
+                LexType::Comma | LexType::Semicolon => self.next_lexeme(),
+                _ => break,
+            }
+        }
+
+        let end = self.get_location().get_end();
+
+        if self.get_lexeme().ne(&LexType::RightCurlyBracket) {
+            return Err(self.report_type_error(false, "unexpected parse table type annotation"));
+        }
+        self.next_lexeme();
+
+        Ok(TypeTable::new(LexLocation::new(begin, end), props, indexer))
+    }
+
+    fn parse_generic_type_list(
+        &mut self,
+        with_default_values: bool,
+    ) -> Result<
+        (
+            Vec<(AstName, LexLocation, Option<Box<AstType>>)>,
+            Vec<(AstName, LexLocation, Option<Box<AstType>>)>,
+        ),
+        Box<AstType>,
+    > {
+        let mut names: Vec<(AstName, LexLocation, Option<Box<AstType>>)> = Vec::new();
+        let mut name_packs: Vec<(AstName, LexLocation, Option<Box<AstType>>)> = Vec::new();
+
+        if self.get_lexeme().eq(&LexType::Less) {
+            let begin = self.get_location().get_begin();
+            self.next_lexeme();
+
+            let mut seen_pack = false;
+            let mut seen_default = false;
+
+            loop {
+                let (name, name_location) = self.parse_name()?;
+
+                if self.get_lexeme() == LexType::Dot3 || seen_pack {
+                    seen_pack = true;
+
+                    if self.get_lexeme() == LexType::Dot3 {
+                        self.next_lexeme();
+                    }
+
+                    if with_default_values && self.get_lexeme() == LexType::Assign {
+                        seen_default = true;
+                        self.next_lexeme();
+
+                        if self.should_parse_type_pack_annotation() {
+                            name_packs.push((
+                                name,
+                                name_location,
+                                Some(self.parse_type_pack_annotation()?),
+                            ));
+                        } else if self.get_lexeme() == LexType::LeftRoundBracket {
+                            name_packs.push((
+                                name,
+                                name_location,
+                                Some(self.parse_type_or_pack_annotation()?),
+                            ));
+                        }
+                    } else {
+                        name_packs.push((name, name_location, None))
+                    }
+                } else {
+                    if with_default_values && self.get_lexeme().eq(&LexType::Assign) {
+                        seen_default = true;
+                        self.next_lexeme();
+
+                        names.push((name, name_location, Some(self.parse_type_annotation()?)));
+                    } else {
+                        names.push((name, name_location, None));
+                    }
+                }
+
+                if self.get_lexeme() == LexType::Comma {
+                    self.next_lexeme();
+                } else {
+                    break;
+                }
+            }
+
+            if self.get_lexeme().ne(&LexType::Greater) {
+                return Err(self.report_type_error(false, "unexpected generic type list"));
+            }
+            self.next_lexeme();
+        }
+
+        Ok((names, name_packs))
+    }
+
     fn parse_simple_type_annotation(
         &mut self,
         allow_pack: bool,
@@ -921,27 +1144,14 @@ impl<'src_lf> Parser<'src_lf> {
         let begin = self.get_location().get_begin();
 
         Ok(match self.get_lexeme() {
-            LexType::Nil => {
-                let annotation = self.parse_nil_type()?;
-
-                (Some(annotation), None)
-            }
-            LexType::True | LexType::False => {
-                let annotation = self.parse_bool_type()?;
-
-                (Some(annotation), None)
-            }
+            LexType::Nil => (Some(self.parse_nil_type()?), None),
+            LexType::True | LexType::False => (Some(self.parse_bool_type()?), None),
             LexType::QuotedString(_) | LexType::RawString(_) | LexType::BrokenString => {
-                let annotation = self.parse_string_type()?;
-
-                (Some(annotation), None)
+                (Some(self.parse_string_type()?), None)
             }
-            LexType::Name(_) => {
-                let annotation = self.parse_name_or_typeof_type()?;
-
-                (Some(annotation), None)
-            }
-            // TODO table type annotation and function type annotation
+            LexType::Name(_) => (Some(self.parse_name_or_typeof_type()?), None),
+            LexType::LeftCurlyBracket => (Some(self.parse_table_type_annotation()?), None),
+            // TODO function type annotation
             _ => return Err(self.report_type_error(true, "unexpected type")),
         })
     }
